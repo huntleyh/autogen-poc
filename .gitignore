@@ -1,0 +1,7 @@
+AOAI_CONFIG_LIST
+.venv/
+.cache/
+paper/
+adhoc-samples/
+.env
+__pycache__/
