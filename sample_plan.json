@@ -1,0 +1,75 @@
+{
+  "Id": "Plan1",
+  "Name": "Plan1",
+  "Description": "Plan1",
+  "CustomerId": "Customer1",
+  "Status": "Active",
+  "StartDate": "2019-01-01",
+  "EndDate": "",
+  "Steps": [
+    {
+      "Id": "1",
+      "Name": "MuffinMan",
+      "Description": "You are baking muffins and only need to add how many are being baked today. No code to be executed. Instruct assistants to add a random number between 1 and 5 to the current count then return the result.",
+      "Status": "Active",
+      "StartDate": "2019-01-01",
+      "EndDate": "",
+      "InitialMessage": "You return the count recieved from the assistant.",
+      "Type": "SequentialStep",
+      "Tasks": [
+        {
+          "Id": "1",
+          "Name": "Task1",
+          "Status": "Active",
+          "StartDate": "2019-01-01",
+          "EndDate": "",
+          "Description": "You are helping to count muffins.",
+          "InitialMessage": "Please add a random number between 1 and 5 to the current count of 12. ",
+          "Prerequisites": []
+        },
+        {
+          "Id": "2",
+          "Name": "Task2",
+          "Status": "Active",
+          "StartDate": "2019-01-01",
+          "EndDate": "",
+          "Description": "You are helping to count muffins.",
+          "InitialMessage": "Please add a random number between 10 and 25 to the current count.",
+          "Prerequisites": []
+        }
+      ]
+    },
+    {
+      "Id": "2",
+      "Name": "MuffinMan",
+      "Description": "You are baking muffins and only need to add how many are being baked today. No code to be executed. Instruct assistants to add a random number between 1 and 5 to the current count then return the result.",
+      "Status": "Active",
+      "StartDate": "2019-01-01",
+      "EndDate": "",
+      "InitialMessage": "You return the count recieved from the assistant.",
+      "Type": "ParallelStep",
+      "Tasks": [
+        {
+          "Id": "1",
+          "Name": "Task1",
+          "Status": "Active",
+          "StartDate": "2019-01-01",
+          "EndDate": "",
+          "Description": "You are helping to count muffins.",
+          "InitialMessage": "Please add a random number between 1 and 5 to the current count of 12. ",
+          "Prerequisites": []
+        },
+        {
+          "Id": "2",
+          "Name": "Task2",
+          "Status": "Active",
+          "StartDate": "2019-01-01",
+          "EndDate": "",
+          "Description": "You are helping to count muffins.",
+          "InitialMessage": "Please add a random number between 10 and 25 to the current count.",
+          "Prerequisites": []
+        }
+      ]
+    }
+  ]
+}
