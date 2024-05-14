@@ -68,6 +68,16 @@
           "Description": "You are helping to count muffins.",
           "InitialMessage": "Please add a random number between 10 and 25 to the current count.",
           "Prerequisites": []
+        },
+        {
+          "Id": "3",
+          "Name": "Task2",
+          "Status": "Active",
+          "StartDate": "2019-01-01",
+          "EndDate": "",
+          "Description": "You are helping to count muffins.",
+          "InitialMessage": "Please provide the sum of all the numbers provided.",
+          "Prerequisites": [1,2]
         }
       ]
     }
