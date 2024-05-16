@@ -1,6 +1,7 @@
 import json
 import autogen
 import asyncio
+from capabilities.stateaware import StateAware
 
 config_list = autogen.config_list_from_json(env_or_file="AOAI_CONFIG_LIST")
 llm_config = {"config_list": config_list}
@@ -25,22 +26,64 @@ async def execute_plan(plan: json):
 
         print(f"\tRunning a {step['Type']} step")
         if(step['Type'] == SEQUENTIAL_STEP):
-            carry_over = "" #run_sequential_tasks(step, carry_over)
+            carry_over = run_sequential_tasks(step, carry_over)
         elif(step['Type'] == PARALLEL_STEP):
-            carry_over = await run_parallel_tasks(step, carry_over)
+            carry_over = "" # await run_parallel_tasks(step, carry_over)
+
+def create_group_for_task(task: json):
+    # # Create an agent based on the task
+    # # We use an assistant agent as we do not need human interaction for this demo
+    # assistant = autogen.AssistantAgent( #autogen.ConversableAgent( #
+    #     name=task['Name'],
+    #     system_message=task['InitialMessage'],
+    #     #description=task['Description'],
+    #     llm_config=llm_config,
+    # )
+    
+    # # Instantiate a StateAware object. Its parameters are all optional.
+    # state_aware_ability = StateAware(
+    #     reset_db=False,  # Use True to force-reset the memo DB, and False to use an existing DB.
+    #     path_to_db_dir="./tmp/interactive/stateaware_db",  # Can be any path, but StateAware agents in a group chat require unique paths.
+    #     verbosity=2
+    # )
+
+    # # Now add state_aware_ability to the agent.
+    # state_aware_ability.add_to_agent(assistant)
+
+    # return assistant
+    return None
 
 # Create an agent for a specific task
 def create_agent_for_task(task: json):    
-    # Create an agent based on the task
-    # We use an assistant agent as we do not need human interaction for this demo
-    assistant = autogen.AssistantAgent( #autogen.ConversableAgent( #
-        name=task['Name'],
-        system_message=task['InitialMessage'],
-        #description=task['Description'],
-        llm_config=llm_config,
-    )
+    taskType = None
     
-    return assistant
+    if 'Type' in task:
+        task['Type']
+        
+    print(f"\tTask: {task['Name']}, Type: {taskType}")
+    if taskType != None and taskType == "Group":
+        return create_group_for_task(task)
+    else:
+        # Create an agent based on the task
+        # We use an assistant agent as we do not need human interaction for this demo
+        assistant = autogen.AssistantAgent( #autogen.ConversableAgent( #
+            name=task['Name'],
+            system_message=task['InitialMessage'],
+            #description=task['Description'],
+            llm_config=llm_config,
+        )
+        
+        # Instantiate a StateAware object. Its parameters are all optional.
+        state_aware_ability = StateAware(
+            reset_db=False,  # Use True to force-reset the memo DB, and False to use an existing DB.
+            path_to_db_dir="./tmp/interactive/stateaware_db",  # Can be any path, but StateAware agents in a group chat require unique paths.
+            verbosity=2
+        )
+
+        # Now add state_aware_ability to the agent.
+        state_aware_ability.add_to_agent(assistant)
+    
+        return assistant
 
 # Build the array used to send list of agents to a sequential chat
 def build_agent_list_with_prereqs(agents: list, tasks: list):
