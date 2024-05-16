@@ -25,6 +25,7 @@
           "EndDate": "",
           "Description": "You are helping to count muffins.",
           "InitialMessage": "Please add a random number between 1 and 5 to the current count of 12. ",
+          "AllowMemory": "false",
           "Prerequisites": []
         },
         {
@@ -78,6 +79,39 @@
           "Description": "You are helping to count muffins.",
           "InitialMessage": "Please provide the sum of all the numbers provided.",
           "Prerequisites": [1,2]
+        },
+        {
+          "Id": "4",
+          "Type": "Group",
+          "Name": "Task2",
+          "Status": "Active",
+          "StartDate": "2019-01-01",
+          "EndDate": "",
+          "Description": "You are helping to count muffins.",
+          "InitialMessage": "Please provide the sum of all the numbers provided.",
+          "Prerequisites": [1,2],
+          "SubTasks": [
+            {
+              "Id": "1",
+              "Name": "Task1",
+              "Status": "Active",
+              "StartDate": "2019-01-01",
+              "EndDate": "",
+              "Description": "You are helping to count muffins.",
+              "InitialMessage": "Please add a random number between 1 and 5 to the current count of 12. ",
+              "Prerequisites": []
+            },
+            {
+              "Id": "2",
+              "Name": "Task2",
+              "Status": "Active",
+              "StartDate": "2019-01-01",
+              "EndDate": "",
+              "Description": "You are helping to count muffins.",
+              "InitialMessage": "Please add a random number between 10 and 25 to the current count.",
+              "Prerequisites": []
+            }
+          ]
         }
       ]
     }
