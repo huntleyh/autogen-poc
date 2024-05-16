@@ -25,7 +25,7 @@ async def execute_plan(plan: json):
 
         print(f"\tRunning a {step['Type']} step")
         if(step['Type'] == SEQUENTIAL_STEP):
-            carry_over = run_sequential_tasks(step, carry_over)
+            carry_over = "" #run_sequential_tasks(step, carry_over)
         elif(step['Type'] == PARALLEL_STEP):
             carry_over = await run_parallel_tasks(step, carry_over)
 
@@ -51,7 +51,7 @@ def build_agent_list_with_prereqs(agents: list, tasks: list):
         # print(f"\tTask: {task['Name']}, Prerequisites: {task['Prerequisites']}")
         prerequisites = task.get('Prerequisites', [])
         if prerequisites is not None and isinstance(prerequisites, list):
-            prerequisites = prerequisites
+            prerequisites = [] #prerequisites
         else:
             prerequisites = []
         # print(f"\tPrerequisites: {prerequisites}")
@@ -125,11 +125,11 @@ async def run_parallel_tasks(step: json, carry_over: str):
     )
 
     agent_list = build_agent_list_with_prereqs(agents, tasks)
-    print(f"\tAgent List: {agent_list}")
     chat_results = await step_agent.a_initiate_chats(agent_list)
     
-    #summary = chat_results[-1].summary
-    #print(f"\tSummary: {summary}")
+    # Use the chat id as the key to retrieve the summary
+    summary = chat_results['3'].summary
+    print(f"\tSummary: {summary}")
     return "summary"
 
 async def main():  
