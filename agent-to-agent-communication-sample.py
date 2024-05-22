@@ -2,6 +2,8 @@ import json
 import autogen
 import asyncio
 from capabilities.stateaware import StateAware
+from domain_knowledge.direct_aoai import retrieve_llm_response_on_question
+from capabilities.task_tracker import TaskTrackingbility
 
 config_list = autogen.config_list_from_json(env_or_file="AOAI_CONFIG_LIST")
 llm_config = {"config_list": config_list}
@@ -12,7 +14,7 @@ PARALLEL_STEP = "ParallelStep"
 # Retrieve the existing plan for a customer
 def retrieve_plan(customer_id: str):
     # Open the JSON file and load it into a Python object
-    with open('sample_plan.json') as f:
+    with open('sample_plan_simplified.json') as f:
         data = json.load(f)
         
         return data
@@ -30,31 +32,19 @@ async def execute_plan(plan: json):
         elif(step['Type'] == PARALLEL_STEP):
             carry_over = "" # await run_parallel_tasks(step, carry_over)
 
-def create_group_for_task(task: json):
-    # # Create an agent based on the task
-    # # We use an assistant agent as we do not need human interaction for this demo
-    # assistant = autogen.AssistantAgent( #autogen.ConversableAgent( #
-    #     name=task['Name'],
-    #     system_message=task['InitialMessage'],
-    #     #description=task['Description'],
-    #     llm_config=llm_config,
-    # )
-    
-    # # Instantiate a StateAware object. Its parameters are all optional.
-    # state_aware_ability = StateAware(
-    #     reset_db=False,  # Use True to force-reset the memo DB, and False to use an existing DB.
-    #     path_to_db_dir="./tmp/interactive/stateaware_db",  # Can be any path, but StateAware agents in a group chat require unique paths.
-    #     verbosity=2
-    # )
+def create_group_for_task(groupTask: json):
+    agents = []
+    for task in groupTask['SubTasks']:
+        agents.append(create_agent_for_task(task, False))
+        
+    # Create a groupchat and groupchat manager based on the task
+    groupchat = autogen.GroupChat(agents=agents, messages=[], max_round=12)
+    manager = autogen.GroupChatManager(groupchat=groupchat, llm_config=llm_config)
 
-    # # Now add state_aware_ability to the agent.
-    # state_aware_ability.add_to_agent(assistant)
-
-    # return assistant
-    return None
+    return manager
 
 # Create an agent for a specific task
-def create_agent_for_task(task: json):    
+def create_agent_for_task(task: json, is_state_aware: bool = True):    
     taskType = None
     
     if 'Type' in task:
@@ -73,16 +63,25 @@ def create_agent_for_task(task: json):
             llm_config=llm_config,
         )
         
-        # Instantiate a StateAware object. Its parameters are all optional.
-        state_aware_ability = StateAware(
+        if False: #is_state_aware == True
+            # Instantiate a StateAware object. Its parameters are all optional.
+            state_aware_ability = StateAware(
+                reset_db=False,  # Use True to force-reset the memo DB, and False to use an existing DB.
+                path_to_db_dir="./tmp/interactive/stateaware_db",  # Can be any path, but StateAware agents in a group chat require unique paths.
+                verbosity=2
+            )
+
+            # Now add state_aware_ability to the agent.
+            state_aware_ability.add_to_agent(assistant)
+    
+        task_aware_ability = TaskTrackingbility(
             reset_db=False,  # Use True to force-reset the memo DB, and False to use an existing DB.
             path_to_db_dir="./tmp/interactive/stateaware_db",  # Can be any path, but StateAware agents in a group chat require unique paths.
             verbosity=2
         )
-
-        # Now add state_aware_ability to the agent.
-        state_aware_ability.add_to_agent(assistant)
-    
+        
+        task_aware_ability.add_to_agent(assistant)
+        
         return assistant
 
 # Build the array used to send list of agents to a sequential chat

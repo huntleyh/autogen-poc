@@ -8,9 +8,6 @@ config_file_or_env = "AOAI_CONFIG_LIST"
 builder_model = "gpt-4-deployment"
 agent_model = "gpt-4-deployment"
 
-def get_roles_needed(question: str):
-    return retrieve_llm_response_on_question(question)
-
 def get_configs():
     config_list_gpt4 = autogen.config_list_from_json(
         env_or_file=config_file_or_env,
