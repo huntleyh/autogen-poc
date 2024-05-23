@@ -19,7 +19,7 @@ class SqlManager:
             return pyodbc.connect(self.connection_string)
         else:
             return pyodbc.connect(
-                f"DRIVER={{ODBC Driver 18 for SQL Server}};"
+                f"DRIVER={{ODBC Driver 17for SQL Server}};"
                 f"SERVER={self.server};"
                 f"DATABASE={self.database};"
                 f"UID={self.username};"
