@@ -6,3 +6,4 @@ adhoc-samples/
 .env
 __pycache__/
 tmp/
+autogen-poc.zip
