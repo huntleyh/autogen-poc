@@ -1,9 +1,14 @@
 import json
 import autogen
 import asyncio
+from sqlalchemy import create_engine
+
+import urllib
+import os
 from capabilities.stateaware import StateAware
 from domain_knowledge.direct_aoai import retrieve_llm_response_on_question
 from capabilities.task_tracker import TaskTrackingbility
+from capabilities.stateaware_non_llm import StateAwareNonLlm
 
 config_list = autogen.config_list_from_json(env_or_file="AOAI_CONFIG_LIST")
 llm_config = {"config_list": config_list}
@@ -30,8 +35,19 @@ async def execute_plan(plan: json):
         if(step['Type'] == SEQUENTIAL_STEP):
             carry_over = run_sequential_tasks(step, carry_over)
         elif(step['Type'] == PARALLEL_STEP):
-            carry_over = "" # await run_parallel_tasks(step, carry_over)
+            #carry_over = await run_parallel_tasks(step, carry_over)
+            carry_over = ""
 
+def create_group_for_task(groupTask: json):
+    agents = []
+    for task in groupTask['SubTasks']:
+        agents.append(create_agent_for_task(task, False))
+        
+    # Create a groupchat and groupchat manager based on the task
+    groupchat = autogen.GroupChat(agents=agents, messages=[], max_round=12)
+    manager = autogen.GroupChatManager(groupchat=groupchat, llm_config=llm_config)
+
+    return manager
 def create_group_for_task(groupTask: json):
     agents = []
     for task in groupTask['SubTasks']:
@@ -48,7 +64,7 @@ def create_agent_for_task(task: json, is_state_aware: bool = True):
     taskType = None
     
     if 'Type' in task:
-        task['Type']
+        taskType = task['Type']
         
     print(f"\tTask: {task['Name']}, Type: {taskType}")
     if taskType != None and taskType == "Group":
@@ -63,24 +79,25 @@ def create_agent_for_task(task: json, is_state_aware: bool = True):
             llm_config=llm_config,
         )
         
-        if False: #is_state_aware == True
+        if is_state_aware == True:
             # Instantiate a StateAware object. Its parameters are all optional.
-            state_aware_ability = StateAware(
-                reset_db=False,  # Use True to force-reset the memo DB, and False to use an existing DB.
-                path_to_db_dir="./tmp/interactive/stateaware_db",  # Can be any path, but StateAware agents in a group chat require unique paths.
+            #state_aware_ability = StateAware(
+            state_aware_ability = StateAwareNonLlm(
+                #reset_db=False,  # Use True to force-reset the memo DB, and False to use an existing DB.
+                #path_to_db_dir="./tmp/interactive/stateaware_db",  # Can be any path, but StateAware agents in a group chat require unique paths.
                 verbosity=2
             )
 
-            # Now add state_aware_ability to the agent.
+            # Now add state_aware_ability to the agent
             state_aware_ability.add_to_agent(assistant)
     
-        task_aware_ability = TaskTrackingbility(
+            task_aware_ability = TaskTrackingbility(
             reset_db=False,  # Use True to force-reset the memo DB, and False to use an existing DB.
             path_to_db_dir="./tmp/interactive/stateaware_db",  # Can be any path, but StateAware agents in a group chat require unique paths.
             verbosity=2
-        )
-        
-        task_aware_ability.add_to_agent(assistant)
+            )
+            
+            task_aware_ability.add_to_agent(assistant)
         
         return assistant
 
@@ -153,6 +170,9 @@ async def run_parallel_tasks(step: json, carry_over: str):
     tasks = []
     # Iterate over the "Tasks" array within each step
     for task in step['Tasks']:
+        # Check the db to see if this task exists; if it does not, add it to the db. If it does,
+        # check the done value so we know if an agent should be created for this task or not
+        # TODO
         # print(f"\tTask: {task['Name']}, Prerequisites: {task['Prerequisites']}")
         agents.append(create_agent_for_task(task))
         tasks.append(task)
@@ -174,9 +194,9 @@ async def run_parallel_tasks(step: json, carry_over: str):
     print(f"\tSummary: {summary}")
     return "summary"
 
-async def main():  
+async def main():
     plan = retrieve_plan("123")
-
+    
     await execute_plan(plan)
 
 # Run the main function
