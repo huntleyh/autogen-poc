@@ -5,5 +5,5 @@ paper/
 adhoc-samples/
 .env
 __pycache__/
-tmp/
+tmp
 autogen-poc.zip
