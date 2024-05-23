@@ -1,0 +1,45 @@
+{
+    "Id": "Plan1",
+    "Name": "Plan1",
+    "Description": "Plan1",
+    "CustomerId": "Customer1",
+    "Status": "Active",
+    "StartDate": "2019-01-01",
+    "EndDate": "",
+    "Steps": [
+      {
+        "Id": "1",
+        "Name": "EndOfYearClientReview",
+        "Description": "Step to create a client end of year review",
+        "Status": "Active",
+        "StartDate": "2019-01-01",
+        "EndDate": "",
+        "InitialMessage": "For the year of 2024 please create 1) a client profile and 2) a list of profitable months in operation for 'Disney World'.",
+        "Type": "SequentialStep",
+        "Tasks": [
+          {
+            "Id": "1",
+            "Name": "Agent1",
+            "Status": "Active",
+            "StartDate": "2019-01-01",
+            "EndDate": "",
+            "Description": "You are an agent capable of creating a client profile.",
+            "InitialMessage": "Please create a client profile for 'Disney World'.",
+            "AllowMemory": "false",
+            "Prerequisites": []
+          },
+          {
+            "Id": "2",
+            "Name": "Agent2",
+            "Status": "Active",
+            "StartDate": "2019-01-01",
+            "EndDate": "",
+            "Description": "You are an agent to help provide list of profitable months in operation",
+            "InitialMessage": "Please create a report on the profitable months for 'Disney World'",
+            "Prerequisites": []
+          }
+        ]
+      }
+    ]
+  }
+  
