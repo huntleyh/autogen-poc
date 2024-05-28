@@ -3,7 +3,7 @@ import pickle
 from typing import Dict, Optional, Union
 import chromadb
 from chromadb.config import Settings
-# from database import Tasks
+from database import Tasks
 import regex
 import json
 
@@ -13,16 +13,16 @@ from autogen.agentchat.contrib.text_analyzer_agent import TextAnalyzerAgent
 from autogen import Agent
 from termcolor import colored
 
-class StateAwareNonLlm(AgentCapability):
+class Recollection(AgentCapability):
     """
-    Teachability uses a vector database to give an agent the ability to remember user teachings,
+    Recollection uses a vector database to give an agent the ability to remember user teachings,
     where the user is any caller (human or not) sending messages to the teachable agent.
-    Teachability is designed to be composable with other agent capabilities.
-    To make any conversable agent teachable, instantiate both the agent and the Teachability class,
-    then pass the agent to teachability.add_to_agent(agent).
+    Recollection is designed to be composable with other agent capabilities.
+    To make any conversable agent teachable, instantiate both the agent and the Recollection class,
+    then pass the agent to Recollection.add_to_agent(agent).
     Note that teachable agents in a group chat must be given unique path_to_db_dir values.
 
-    When adding Teachability to an agent, the following are modified:
+    When adding Recollection to an agent, the following are modified:
     - The agent's system message is appended with a note about the agent's new ability.
     - A hook is added to the agent's `process_last_received_message` hookable method,
     and the hook potentially modifies the last of the received messages to include earlier teachings related to the message.
@@ -77,7 +77,7 @@ class StateAwareNonLlm(AgentCapability):
             """
 
     def add_to_agent(self, agent: ConversableAgent):
-        """Adds teachability to the given agent."""
+        """Adds Recollection to the given agent."""
         self.teachable_agent = agent
 
         # Save this task (the agents name is the task) to the db if it doesn't already exist
@@ -91,8 +91,6 @@ class StateAwareNonLlm(AgentCapability):
         # determine if the task was completed.
         agent.register_hook(hookable_method="process_last_received_message", hook=self.process_last_received_message)
         agent.register_hook(hookable_method="process_message_before_send", hook=self.process_message_before_send)
-        
-        self.hydrate_agent()
 
         # TODO: Check if this task was already done. If so, tell the agent the work was already done (probably need
         # to also get the outcome - so might need to save that when the agent finishes the task so it can be passed
@@ -105,13 +103,6 @@ class StateAwareNonLlm(AgentCapability):
         #     agent.system_message + f"\nWhen you complete the ask, respond with: {agent.name}: Done"
         # )
 
-    def hydrate_agent(self):
-        """
-        Hydrates the agent with the necessary information to recollect previous runs.
-        """
-        # messages = self.memory.retrieve_messages(self.plan_id, self.teachable_agent.name)
-        # self.teachable_agent.chat_messages = messages
-        
     def process_last_received_message(self, text: Union[Dict, str]):
         """
         If this is the first message recieved then get the list of steps needed to complete the task and appends it with instructions
