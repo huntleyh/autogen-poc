@@ -1,7 +1,7 @@
 import json
 import autogen
 import asyncio
-from sqlalchemy import create_engine
+# from sqlalchemy import create_engine
 
 import urllib
 import os
@@ -17,9 +17,9 @@ SEQUENTIAL_STEP = "SequentialStep"
 PARALLEL_STEP = "ParallelStep"
 
 # Retrieve the existing plan for a customer
-def retrieve_plan(customer_id: str):
+def retrieve_plan(customer_id: str, file_name: str = "sample_plan_simplified.json"):
     # Open the JSON file and load it into a Python object
-    with open('sample_plan_simplified.json') as f:
+    with open(file_name) as f:
         data = json.load(f)
         
         return data
@@ -143,10 +143,19 @@ def build_agent_list(agents: list):
 # Execute a sequential step with the carry_over from previous chats as needed
 def run_sequential_tasks(step: json, carry_over: str):
     agents = []
-
+    group_managers = []
+    
     # Iterate over the "Tasks" array within each step
     for task in step['Tasks']:
-        agents.append(create_agent_for_task(task))
+        # agents.append(create_agent_for_task(task))
+            if 'Type' in task:
+                taskType = task['Type']
+                
+            print(f"\tTask: {task['Name']}, Type: {taskType}")
+            if taskType != None and taskType == "Group":
+                group_managers.append(create_group_for_task(task))
+            else:
+                agents.append(create_agent_for_task(task))
     
     # initiate the chat with the agents
     # The Number Agent always returns the same numbers.
@@ -158,7 +167,20 @@ def run_sequential_tasks(step: json, carry_over: str):
         human_input_mode="NEVER",
     )
     
-    chat_results = step_agent.initiate_chats(build_agent_list(agents))
+    if(group_managers.__len__() > 0):
+        chat_results = step_agent.initiate_chats(build_agent_list(group_managers))
+        
+        manager: autogen.GroupChatManager = group_managers[0]
+        
+        messages_json = manager.chat_messages_for_summary(manager)
+        
+        json_str = json.dumps(messages_json)
+        
+        # Write the json_str to a text file
+        with open("group_chat_history.txt", "w") as file:
+            file.write(json_str)
+    else:
+        chat_results = step_agent.initiate_chats(build_agent_list(agents))
     
     summary = chat_results[-1].summary
     print(f"\t Returning carry_over summary of: {summary}")
@@ -195,7 +217,7 @@ async def run_parallel_tasks(step: json, carry_over: str):
     return "summary"
 
 async def main():
-    plan = retrieve_plan("123")
+    plan = retrieve_plan("123", "sample_plan_group_only.json")
     
     await execute_plan(plan)
 

@@ -1,2 +1,3 @@
 pyautogen[autobuild]
 pyodbc
+sqlalchemy
