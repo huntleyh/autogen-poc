@@ -13,38 +13,46 @@ from autogen.agentchat.contrib.text_analyzer_agent import TextAnalyzerAgent
 from autogen import Agent
 from termcolor import colored
 
+from models.agent_context import AgentContext, PlanContext
+from models.agent_memory import Event, Memory
+
 class StateAwareNonLlm(AgentCapability):
     """
-    Teachability uses a vector database to give an agent the ability to remember user teachings,
+    state_aware capability uses a vector database to give an agent the ability to remember user teachings,
     where the user is any caller (human or not) sending messages to the teachable agent.
-    Teachability is designed to be composable with other agent capabilities.
-    To make any conversable agent teachable, instantiate both the agent and the Teachability class,
-    then pass the agent to teachability.add_to_agent(agent).
+    state_aware capability is designed to be composable with other agent capabilities.
+    To make any conversable agent teachable, instantiate both the agent and the state_aware capability class,
+    then pass the agent to state_aware capability.add_to_agent(agent).
     Note that teachable agents in a group chat must be given unique path_to_db_dir values.
 
-    When adding Teachability to an agent, the following are modified:
+    When adding state_aware capability to an agent, the following are modified:
     - The agent's system message is appended with a note about the agent's new ability.
     - A hook is added to the agent's `process_last_received_message` hookable method,
     and the hook potentially modifies the last of the received messages to include earlier teachings related to the message.
     Added teachings do not propagate into the stored message history.
     If new user teachings are detected, they are added to new memos in the vector database.
     """
+    
+    MESSAGE_TYPE = "MESSAGE"
+    EXCEPTION_TYPE = "EXCEPTION"
+    AGENT_ROLE = "Agent"
 
     def __init__(
         self,
+        context: AgentContext,
         verbosity: Optional[int] = 0,
         #reset_db: Optional[bool] = False,
-        #path_to_db_dir: Optional[str] = "./tmp/teachable_agent_db",
+        #path_to_db_dir: Optional[str] = "./tmp/state_aware_agent_db",
         recall_threshold: Optional[float] = 1.5,
         max_num_retrievals: Optional[int] = 10,
-        llm_config: Optional[Union[Dict, bool]] = None,
-        task_db = Tasks()
+        llm_config: Optional[Union[Dict, bool]] = None
+        # task_db = Tasks()
     ):
         """
         Args:
             verbosity (Optional, int): # 0 (default) for basic info, 1 to add memory operations, 2 for analyzer messages, 3 for memo lists.
             reset_db (Optional, bool): True to clear the DB before starting. Default False.
-            path_to_db_dir (Optional, str): path to the directory where this particular agent's DB is stored. Default "./tmp/teachable_agent_db"
+            path_to_db_dir (Optional, str): path to the directory where this particular agent's DB is stored. Default "./tmp/state_aware_agent_db"
             recall_threshold (Optional, float): The maximum distance for retrieved memos, where 0.0 is exact match. Default 1.5. Larger values allow more (but less relevant) memos to be recalled.
             max_num_retrievals (Optional, int): The maximum number of memos to retrieve from the DB. Default 10.
             llm_config (dict or False): llm inference configuration passed to TextAnalyzerAgent.
@@ -56,16 +64,17 @@ class StateAwareNonLlm(AgentCapability):
         self.max_num_retrievals = max_num_retrievals
         self.llm_config = llm_config
         self.message_count = 0
-        self.task_db = task_db
+        # self.task_db = task_db
 
         self.analyzer = None
-        self.teachable_agent = None
+        self.state_aware_agent = None
+        self.memory = Memory(context.planContext.planId, context.taskName, context.taskId)
 
         # Create the memo store.
         #self.memo_store = MemoStore(self.verbosity, reset_db, self.path_to_db_dir)
 
         # Print the list
-        task_db.print_tasks()
+        # task_db.print_tasks()
 
     def retrieve_steps(self, text: Union[Dict, str])->str:
         """Tries to retrieve the steps needed to complete a task."""
@@ -77,12 +86,12 @@ class StateAwareNonLlm(AgentCapability):
             """
 
     def add_to_agent(self, agent: ConversableAgent):
-        """Adds teachability to the given agent."""
-        self.teachable_agent = agent
+        """Adds state_aware capability to the given agent."""
+        self.state_aware_agent = agent
 
-        # Save this task (the agents name is the task) to the db if it doesn't already exist
-        if (not self.task_db.task_exists(agent.name)):
-            self.task_db.add_task(agent.name, agent.description)
+        # # Save this task (the agents name is the task) to the db if it doesn't already exist
+        # if (not self.task_db.task_exists(agent.name)):
+        #     self.task_db.add_task(agent.name, agent.description)
         #task = self.memo_store.get_task_str(agent.name)
         #if task.rfind(f"{agent.name}") == -1:
         #    self.memo_store.save_task_to_db(f"{agent.name}: Not Done")
@@ -92,7 +101,7 @@ class StateAwareNonLlm(AgentCapability):
         agent.register_hook(hookable_method="process_last_received_message", hook=self.process_last_received_message)
         agent.register_hook(hookable_method="process_message_before_send", hook=self.process_message_before_send)
         
-        self.hydrate_agent()
+        self.recollect()
 
         # TODO: Check if this task was already done. If so, tell the agent the work was already done (probably need
         # to also get the outcome - so might need to save that when the agent finishes the task so it can be passed
@@ -105,12 +114,19 @@ class StateAwareNonLlm(AgentCapability):
         #     agent.system_message + f"\nWhen you complete the ask, respond with: {agent.name}: Done"
         # )
 
-    def hydrate_agent(self):
+    def recollect(self):
         """
         Hydrates the agent with the necessary information to recollect previous runs.
         """
-        # messages = self.memory.retrieve_messages(self.plan_id, self.teachable_agent.name)
-        # self.teachable_agent.chat_messages = messages
+        message_events = self.memory.retrieve_memory()
+        
+        messages = []
+        for event in message_events:
+            if event.message_type == self.MESSAGE_TYPE:
+                messages.append(event.message)
+                
+        #self.state_aware_agent. = messages
+        # self.state_aware_agent.chat_messages = messages
         
     def process_last_received_message(self, text: Union[Dict, str]):
         """
@@ -140,7 +156,7 @@ class StateAwareNonLlm(AgentCapability):
             steps = regex.findall(pattern, required_steps)
 
             for step in steps:
-                self.task_db.add_task(self.teachable_agent.name + "-subtask", step)
+                continue #self.task_db.add_task(self.state_aware_agent.name + "-subtask", step)
 
             text = f"""
             This is your task: 
@@ -174,8 +190,12 @@ class StateAwareNonLlm(AgentCapability):
         response_json = json.loads(json_str)
 
         for step in response_json['Steps']:
-            self.task_db.update_task(self.teachable_agent.name + "-subtask", step["STEP"], step["DETAIL"], step["STATUS"])
+            continue
+            # self.task_db.update_task(self.state_aware_agent.name + "-subtask", step["STEP"], step["DETAIL"], step["STATUS"])
 
+        self.memory.save_to_memory(
+            event = Event(message_type=self.MESSAGE_TYPE, message=message, role=self.AGENT_ROLE)
+        )
         #expanded_text = self._retrieve_task_from_db(text)
         # Try to retrieve relevant memos from the DB.
         #expanded_text = text
@@ -317,13 +337,13 @@ class StateAwareNonLlm(AgentCapability):
     # def _analyze(self, text_to_analyze: Union[Dict, str], analysis_instructions: Union[Dict, str]):
     #     """Asks TextAnalyzerAgent to analyze the given text according to specific instructions."""
     #     self.analyzer.reset()  # Clear the analyzer's list of messages.
-    #     self.teachable_agent.send(
+    #     self.state_aware_agent.send(
     #         recipient=self.analyzer, message=text_to_analyze, request_reply=False, silent=(self.verbosity < 2)
     #     )  # Put the message in the analyzer's list.
-    #     self.teachable_agent.send(
+    #     self.state_aware_agent.send(
     #         recipient=self.analyzer, message=analysis_instructions, request_reply=True, silent=(self.verbosity < 2)
     #     )  # Request the reply.
-    #     return self.teachable_agent.last_message(self.analyzer)["content"]
+    #     return self.state_aware_agent.last_message(self.analyzer)["content"]
 
 
 class MemoStore:
@@ -339,7 +359,7 @@ class MemoStore:
         self,
         verbosity: Optional[int] = 0,
         reset: Optional[bool] = False,
-        path_to_db_dir: Optional[str] = "./tmp/teachable_agent_db",
+        path_to_db_dir: Optional[str] = "./tmp/state_aware_agent_db",
     ):
         """
         Args:

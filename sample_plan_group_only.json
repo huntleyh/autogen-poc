@@ -2,6 +2,7 @@
   "Id": "Plan1",
   "Name": "Plan1",
   "Description": "Plan1",
+  "DeliverableName": "Client Profile",
   "CustomerId": "Customer1",
   "Status": "Active",
   "StartDate": "2019-01-01",
@@ -9,7 +10,7 @@
   "Steps": [
     {
       "Id": "2",
-      "Name": "MuffinMan",
+      "Name": "User1",
       "Description": "You are building a client profile",
       "Status": "Active",
       "StartDate": "2019-01-01",
@@ -24,8 +25,8 @@
           "Status": "Active",
           "StartDate": "2019-01-01",
           "EndDate": "",
-          "Description": "You have two helper agents: Analyst and Researcher. The Analyst will create a client profile with target market of a company and the Researcher will find out who are the current CEO and CTO of the business.",
-          "InitialMessage": "Provide a summary of the target market for 'Disney Corporation' along with the name of it's current CTO. If you do not have specific data then ASK the MuffinMan for it. Do not make any assumptions.",
+          "Description": "",
+          "InitialMessage": "Start building the completed client profile for 'Disney Corporation'.",
           "Prerequisites": [],
           "SubTasks": [
             {
@@ -35,7 +36,7 @@
               "StartDate": "2019-01-01",
               "EndDate": "",
               "Description": "Analyst. You are focused on creating client profiles with target market for a company.",
-              "InitialMessage": "Create a two line report for a client profile of 'Disney Corporation' with the current target market of the business. If you do not know then ASK the MuffinMan for this info. Do NOT make assumptions.",
+              "InitialMessage": "Create a two line report for a client profile of 'Disney Corporation' with the current target market of the business. If you do not know then ASK the Critic for this info. Do NOT make assumptions.",
               "Prerequisites": []
             },
             {
@@ -45,7 +46,17 @@
               "StartDate": "2019-01-01",
               "EndDate": "",
               "Description": "Researcher. You are focused on finding out the current CEO and CTO of a business.",
-              "InitialMessage": "Create a one line report of the current CTO of the 'Disney Corporation' business. If you do not know then ASK the MuffinMan for this info. Do NOT make assumptions.",
+              "InitialMessage": "Create a one line report of the current CTO of the 'Disney Corporation' business. If you do not know then ASK the Critic for this info. Do NOT make assumptions.",
+              "Prerequisites": []
+            },
+            {
+              "Id": "2",
+              "Name": "Critic",
+              "Status": "Active",
+              "StartDate": "2019-01-01",
+              "EndDate": "",
+              "Description": "Critic. You are focused on ensuring the final output is complete. If an agent has an ASK then TERMINATE the discussion and wait for user input.",
+              "InitialMessage": "Critic. You are focused on ensuring the final output is complete. If an agent has an ASK then TERMINATE the discussion and wait for user input.",
               "Prerequisites": []
             }
           ]
