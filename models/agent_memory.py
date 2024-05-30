@@ -34,7 +34,7 @@ class Memory:
         except pyodbc.Error as e:
             print(f"Error saving to memory: {e}")
 
-    def retrieve_memory(self)->list[Event]:
+    def retrieve_memory(self, lookback: int = -1)->list[Event]:
         try:
             conn = pyodbc.connect(self.connection_string)
             cursor = conn.cursor()

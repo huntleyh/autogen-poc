@@ -118,7 +118,7 @@ def build_agent_list_with_prereqs(agents: list, tasks: list):
             "chat_id": task['Id'],
             "recipient": agent,
             "message": agent.system_message,
-            "max_turns": 2,
+            "max_turns": 5,
             "summary_method": "last_msg",
             "silent": False,
             "prerequisites": prerequisites

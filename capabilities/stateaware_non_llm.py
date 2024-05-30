@@ -118,7 +118,7 @@ class StateAwareNonLlm(AgentCapability):
         """
         Hydrates the agent with the necessary information to recollect previous runs.
         """
-        message_events = self.memory.retrieve_memory()
+        message_events = self.memory.retrieve_memory(lookback=50)
         
         messages = []
         for event in message_events:
