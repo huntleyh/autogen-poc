@@ -90,7 +90,7 @@ def create_agent_for_task(task: json, deliverable: PlanContext, is_state_aware: 
 
             # Create an agent based on the task
             # We use an assistant agent as we do not need human interaction for this demo
-            assistant = autogen.AssistantAgent( #autogen.ConversableAgent( #
+            assistant = autogen.ConversableAgent( #autogen.AssistantAgent( #
                 name=task['Name'],
                 system_message=task['InitialMessage'],
                 #description=task['Description'],
@@ -183,6 +183,7 @@ def run_sequential_tasks(deliverable: AgentContext, step: json, carry_over: str)
     print(f"\tName: {step['Name']}, InitialMessage: {step['InitialMessage']}, Description: {step['Description']}")
     
     if(len(group_managers) > 0):
+
         chat_results = step_agent.initiate_chats(build_agent_list(group_managers))
         
         # For each groupchat manager we store their conversation history so we can retrieve it afterward
