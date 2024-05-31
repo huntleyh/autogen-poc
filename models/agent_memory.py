@@ -4,10 +4,11 @@ import pyodbc
 from models.agent_context import AgentContext
 
 class Event:
-    def __init__(self, role, message, message_type):
+    def __init__(self, role, message, message_type, from_agent_name=None):
         self.role = role
         self.message = message
         self.message_type = message_type
+        self.from_agent_name = from_agent_name
         
 class Memory:
     def __init__(self, planId, agentName, taskId):
@@ -24,9 +25,9 @@ class Memory:
             cursor = conn.cursor()
 
             # Call the stored procedure with the appropriate parameters
-            cursor.execute("EXECUTE dbo.SaveToMemory ?, ?, ?, ?, ?, ?",
+            cursor.execute("EXECUTE dbo.SaveToMemory ?, ?, ?, ?, ?, ?, ?",
                             self.planId, self.agentName, self.taskId, 
-                            event.role, event.message, event.message_type)
+                            event.role, event.message, event.message_type, event.from_agent_name)
             conn.commit()
 
             cursor.close()
@@ -55,7 +56,8 @@ class Memory:
                 role = row['Role']
                 message = row['Message']
                 message_type = row['MessageType']
-                event = Event(role, message, message_type)
+                from_agent_name = row['FromAgent']
+                event = Event(role, message, message_type, from_agent_name)
                 events.append(event)
             
             return events

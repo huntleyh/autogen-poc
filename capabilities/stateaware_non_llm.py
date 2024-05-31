@@ -1,3 +1,4 @@
+from collections import defaultdict
 import os
 import pickle
 from typing import Dict, Optional, Union
@@ -15,6 +16,7 @@ from termcolor import colored
 
 from models.agent_context import AgentContext, PlanContext
 from models.agent_memory import Event, Memory
+from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Type, TypeVar, Union
 
 class StateAwareNonLlm(AgentCapability):
     """
@@ -69,10 +71,7 @@ class StateAwareNonLlm(AgentCapability):
         self.analyzer = None
         self.state_aware_agent = None
         self.memory = Memory(context.planContext.planId, context.taskName, context.taskId)
-
-        # Create the memo store.
-        #self.memo_store = MemoStore(self.verbosity, reset_db, self.path_to_db_dir)
-
+        
         # Print the list
         # task_db.print_tasks()
 
@@ -98,10 +97,13 @@ class StateAwareNonLlm(AgentCapability):
 
         # Register hooks for processing the last message and one for before the message is sent in order to
         # determine if the task was completed.
+        # For each incoming message we handle it accordingly
         agent.register_hook(hookable_method="process_last_received_message", hook=self.process_last_received_message)
+        # For each outgoing message we store it in memory
         agent.register_hook(hookable_method="process_message_before_send", hook=self.process_message_before_send)
         
-        self.recollect()
+        # Enable resuming by recollecting what we've done so far
+        ##self.recollect()
 
         # TODO: Check if this task was already done. If so, tell the agent the work was already done (probably need
         # to also get the outcome - so might need to save that when the agent finishes the task so it can be passed
@@ -114,17 +116,18 @@ class StateAwareNonLlm(AgentCapability):
         #     agent.system_message + f"\nWhen you complete the ask, respond with: {agent.name}: Done"
         # )
 
-    def recollect(self):
+    def recollect(self)->list[Dict]: #Dict[Agent, List[Dict]]:
         """
         Hydrates the agent with the necessary information to recollect previous runs.
         """
-        message_events = self.memory.retrieve_memory(lookback=50)
+        events = self.memory.retrieve_memory(lookback=50)
         
-        messages = []
-        for event in message_events:
+        messages = defaultdict(list)
+        for event in events:
             if event.message_type == self.MESSAGE_TYPE:
-                messages.append(event.message)
-                
+                messages[Agent].append({"content": event.message, "role": event.role})
+        
+        return messages
         #self.state_aware_agent. = messages
         # self.state_aware_agent.chat_messages = messages
         
@@ -174,7 +177,14 @@ class StateAwareNonLlm(AgentCapability):
         if self.verbosity >= 1:
             print(colored(f"\nUsing text:\n\n{text}", "light_yellow"))
         
-        self.message_count = self.message_count + 1
+        self.message_count = self.message_count + 1        
+        
+        message = ConversableAgent._message_to_dict(text)
+        
+        self.memory.save_to_memory(
+            event = Event(message_type=self.MESSAGE_TYPE, message=message.get("content"), role=self.__get_role__(message))
+        )
+        
         return text    
     
     def process_message_before_send(self, message: Union[Dict, str], sender: Agent, recipient: Agent, silent: bool):
@@ -183,10 +193,11 @@ class StateAwareNonLlm(AgentCapability):
         Uses TextAnalyzerAgent to make decisions about memo storage and retrieval.
         """
 
+        message = ConversableAgent._message_to_dict(message)
         # If the agent is conversing, update the state to in progress. If the message the agent is about to send
         # contains the Done message, update the db to indicate the task is done
         # extract the json from the message and use that to update the tasks
-        json_str = message.split("=")[1]
+        json_str = message.get('content').split("=")[1]
         response_json = json.loads(json_str)
 
         for step in response_json['Steps']:
@@ -194,157 +205,19 @@ class StateAwareNonLlm(AgentCapability):
             # self.task_db.update_task(self.state_aware_agent.name + "-subtask", step["STEP"], step["DETAIL"], step["STATUS"])
 
         self.memory.save_to_memory(
-            event = Event(message_type=self.MESSAGE_TYPE, message=message, role=self.AGENT_ROLE)
+            event = Event(message_type=self.MESSAGE_TYPE, message=message.get("content"), role=self.__get_role__(message))
         )
-        #expanded_text = self._retrieve_task_from_db(text)
-        # Try to retrieve relevant memos from the DB.
-        #expanded_text = text
-        #if self.memo_store.last_memo_id > 0:
-        #    expanded_text = self._consider_memo_retrieval(text)
-
-        # Try to store any user teachings in new memos to be used in the future.
-        #self._consider_memo_storage(text)
-
-        # Return the (possibly) expanded message text.
-        #return expanded_text
+        
         return message
-
-    # def _consider_memo_storage(self, comment: Union[Dict, str]):
-    #     """Decides whether to store something from one user comment in the DB."""
-    #     memo_added = False
-
-    #     # Check for a problem-solution pair.
-    #     response = self._analyze(
-    #         comment,
-    #         "Does any part of the TEXT ask the agent to perform a task or solve a problem? Answer with just one word, yes or no.",
-    #     )
-    #     if "yes" in response.lower():
-    #         # Can we extract advice?
-    #         advice = self._analyze(
-    #             comment,
-    #             "Briefly copy any advice from the TEXT that may be useful for a similar but different task in the future. But if no advice is present, just respond with 'none'.",
-    #         )
-    #         if "none" not in advice.lower():
-    #             # Yes. Extract the task.
-    #             task = self._analyze(
-    #                 comment,
-    #                 "Briefly copy just the task from the TEXT, then stop. Don't solve it, and don't include any advice.",
-    #             )
-    #             # Generalize the task.
-    #             general_task = self._analyze(
-    #                 task,
-    #                 "Summarize very briefly, in general terms, the type of task described in the TEXT. Leave out details that might not appear in a similar problem.",
-    #             )
-    #             # Add the task-advice (problem-solution) pair to the vector DB.
-    #             if self.verbosity >= 1:
-    #                 print(colored("\nREMEMBER THIS TASK-ADVICE PAIR", "light_yellow"))
-    #             self.memo_store.add_input_output_pair(general_task, advice)
-    #             memo_added = True
-
-    #     # Check for information to be learned.
-    #     response = self._analyze(
-    #         comment,
-    #         "Does the TEXT contain information that could be committed to memory? Answer with just one word, yes or no.",
-    #     )
-    #     if "yes" in response.lower():
-    #         # Yes. What question would this information answer?
-    #         question = self._analyze(
-    #             comment,
-    #             "Imagine that the user forgot this information in the TEXT. How would they ask you for this information? Include no other text in your response.",
-    #         )
-    #         # Extract the information.
-    #         answer = self._analyze(
-    #             comment, "Copy the information from the TEXT that should be committed to memory. Add no explanation."
-    #         )
-    #         # Add the question-answer pair to the vector DB.
-    #         if self.verbosity >= 1:
-    #             print(colored("\nREMEMBER THIS QUESTION-ANSWER PAIR", "light_yellow"))
-    #         self.memo_store.add_input_output_pair(question, answer)
-    #         memo_added = True
-
-    #     # Were any memos added?
-    #     if memo_added:
-    #         # Yes. Save them to disk.
-    #         self.memo_store._save_memos()
-
-    # def _consider_memo_retrieval(self, comment: Union[Dict, str]):
-    #     """Decides whether to retrieve memos from the DB, and add them to the chat context."""
-
-    #     # First, use the comment directly as the lookup key.
-    #     if self.verbosity >= 1:
-    #         print(colored("\nLOOK FOR RELEVANT MEMOS, AS QUESTION-ANSWER PAIRS", "light_yellow"))
-    #     memo_list = self._retrieve_relevant_memos(comment)
-
-    #     # Next, if the comment involves a task, then extract and generalize the task before using it as the lookup key.
-    #     response = self._analyze(
-    #         comment,
-    #         "Does any part of the TEXT ask the agent to perform a task or solve a problem? Answer with just one word, yes or no.",
-    #     )
-    #     if "yes" in response.lower():
-    #         if self.verbosity >= 1:
-    #             print(colored("\nLOOK FOR RELEVANT MEMOS, AS TASK-ADVICE PAIRS", "light_yellow"))
-    #         # Extract the task.
-    #         task = self._analyze(
-    #             comment, "Copy just the task from the TEXT, then stop. Don't solve it, and don't include any advice."
-    #         )
-    #         # Generalize the task.
-    #         general_task = self._analyze(
-    #             task,
-    #             "Summarize very briefly, in general terms, the type of task described in the TEXT. Leave out details that might not appear in a similar problem.",
-    #         )
-    #         # Append any relevant memos.
-    #         memo_list.extend(self._retrieve_relevant_memos(general_task))
-
-    #     # De-duplicate the memo list.
-    #     memo_list = list(set(memo_list))
-
-    #     # Append the memos to the text of the last message.
-    #     return comment + self._concatenate_memo_texts(memo_list)
-
     
-
-
-    # def _retrieve_relevant_memos(self, input_text: str) -> list:
-    #     """Returns semantically related memos from the DB."""
-    #     memo_list = self.memo_store.get_related_memos(
-    #         input_text, n_results=self.max_num_retrievals, threshold=self.recall_threshold
-    #     )
-
-    #     if self.verbosity >= 1:
-    #         # Was anything retrieved?
-    #         if len(memo_list) == 0:
-    #             # No. Look at the closest memo.
-    #             print(colored("\nTHE CLOSEST MEMO IS BEYOND THE THRESHOLD:", "light_yellow"))
-    #             self.memo_store.get_nearest_memo(input_text)
-    #             print()  # Print a blank line. The memo details were printed by get_nearest_memo().
-
-    #     # Create a list of just the memo output_text strings.
-    #     memo_list = [memo[1] for memo in memo_list]
-    #     return memo_list
-
-    # def _concatenate_memo_texts(self, memo_list: list) -> str:
-    #     """Concatenates the memo texts into a single string for inclusion in the chat context."""
-    #     memo_texts = ""
-    #     if len(memo_list) > 0:
-    #         info = "\n# Memories that might help\n"
-    #         for memo in memo_list:
-    #             info = info + "- " + memo + "\n"
-    #         if self.verbosity >= 1:
-    #             print(colored("\nMEMOS APPENDED TO LAST MESSAGE...\n" + info + "\n", "light_yellow"))
-    #         memo_texts = memo_texts + "\n" + info
-    #     return memo_texts
-
-    # def _analyze(self, text_to_analyze: Union[Dict, str], analysis_instructions: Union[Dict, str]):
-    #     """Asks TextAnalyzerAgent to analyze the given text according to specific instructions."""
-    #     self.analyzer.reset()  # Clear the analyzer's list of messages.
-    #     self.state_aware_agent.send(
-    #         recipient=self.analyzer, message=text_to_analyze, request_reply=False, silent=(self.verbosity < 2)
-    #     )  # Put the message in the analyzer's list.
-    #     self.state_aware_agent.send(
-    #         recipient=self.analyzer, message=analysis_instructions, request_reply=True, silent=(self.verbosity < 2)
-    #     )  # Request the reply.
-    #     return self.state_aware_agent.last_message(self.analyzer)["content"]
-
+    def __get_role__(self, message: Dict)->str:
+        """
+        Returns the role of the message sender.
+        """
+        if message.get("role") is not None:
+            return message.get("role")
+        
+        return "assistant"
 
 class MemoStore:
     """
@@ -419,23 +292,6 @@ class MemoStore:
         self.uid_text_dict = {}
         self._save_memos()
 
-    # def add_input_output_pair(self, input_text: str, output_text: str):
-    #     """Adds an input-output pair to the vector DB."""
-    #     self.last_memo_id += 1
-    #     self.vec_db.add(documents=[input_text], ids=[str(self.last_memo_id)])
-    #     self.uid_text_dict[str(self.last_memo_id)] = input_text, output_text
-    #     if self.verbosity >= 1:
-    #         print(
-    #             colored(
-    #                 "\nINPUT-OUTPUT PAIR ADDED TO VECTOR DATABASE:\n  ID\n    {}\n  INPUT\n    {}\n  OUTPUT\n    {}\n".format(
-    #                     self.last_memo_id, input_text, output_text
-    #                 ),
-    #                 "light_yellow",
-    #             )
-    #         )
-    #     if self.verbosity >= 3:
-    #         self.list_memos()
-
     def save_task_to_db(self, task: str):
         print(self.vec_db.count()+1)
         self.vec_db.add(documents=[task], ids=[str(self.vec_db.count()+1)])
@@ -461,27 +317,6 @@ class MemoStore:
 
         print(results["documents"])
 
-    # def get_nearest_memo(self, query_text: str):
-    #     """Retrieves the nearest memo to the given query text."""
-    #     results = self.vec_db.query(query_texts=[query_text], n_results=1)
-        
-    #     print(results["documents"].count(query_text))
-    #     # if there was not a match, this was
-
-    #     uid, input_text, distance = results["ids"][0][0], results["documents"][0][0], results["distances"][0][0]
-    #     input_text_2, output_text = self.uid_text_dict[uid]
-    #     assert input_text == input_text_2
-    #     if self.verbosity >= 1:
-    #         print(
-    #             colored(
-    #                 "\nINPUT-OUTPUT PAIR RETRIEVED FROM VECTOR DATABASE:\n  INPUT1\n    {}\n  OUTPUT\n    {}\n  DISTANCE\n    {}".format(
-    #                     input_text, output_text, distance
-    #                 ),
-    #                 "light_yellow",
-    #             )
-    #         )
-    #     return input_text, output_text, distance
-
     def get_related_memos(self, query_text: str, n_results: int, threshold: Union[int, float]):
         """Retrieves memos that are related to the given query text within the specified distance threshold."""
         if n_results > len(self.uid_text_dict):
@@ -505,34 +340,3 @@ class MemoStore:
                     )
                 memos.append((input_text, output_text, distance))
         return memos
-
-    # def prepopulate(self):
-    #     """Adds a few arbitrary examples to the vector DB, just to make retrieval less trivial."""
-    #     if self.verbosity >= 1:
-    #         print(colored("\nPREPOPULATING MEMORY", "light_green"))
-    #     examples = []
-    #     examples.append({"text": "When I say papers I mean research papers, which are typically pdfs.", "label": "yes"})
-    #     examples.append({"text": "Please verify that each paper you listed actually uses langchain.", "label": "no"})
-    #     examples.append({"text": "Tell gpt the output should still be latex code.", "label": "no"})
-    #     examples.append({"text": "Hint: convert pdfs to text and then answer questions based on them.", "label": "yes"})
-    #     examples.append(
-    #         {"text": "To create a good PPT, include enough content to make it interesting.", "label": "yes"}
-    #     )
-    #     examples.append(
-    #         {
-    #             "text": "No, for this case the columns should be aspects and the rows should be frameworks.",
-    #             "label": "no",
-    #         }
-    #     )
-    #     examples.append({"text": "When writing code, remember to include any libraries that are used.", "label": "yes"})
-    #     examples.append({"text": "Please summarize the papers by Eric Horvitz on bounded rationality.", "label": "no"})
-    #     examples.append({"text": "Compare the h-index of Daniel Weld and Oren Etzioni.", "label": "no"})
-    #     examples.append(
-    #         {
-    #             "text": "Double check to be sure that the columns in a table correspond to what was asked for.",
-    #             "label": "yes",
-    #         }
-    #     )
-    #     for example in examples:
-    #         self.add_input_output_pair(example["text"], example["label"])
-    #     self._save_memos()

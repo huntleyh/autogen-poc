@@ -59,6 +59,14 @@ def create_group_for_task(groupTask: json, deliverable: PlanContext, is_state_aw
         
     return manager
 
+def persist_messages_to_agent_memory(recipient, messages, sender, config): 
+    if "callback" in config and  config["callback"] is not None:
+        callback = config["callback"]
+        callback(sender, recipient, messages[-1])
+    print(f"Messages sent to: {recipient.name} | num messages: {len(messages)}")
+    return False, None  # required to ensure the agent communication flow continues
+
+
 # Create an agent for a specific task
 def create_agent_for_task(task: json, deliverable: PlanContext, is_state_aware: bool = True):    
     taskType = None
@@ -69,17 +77,7 @@ def create_agent_for_task(task: json, deliverable: PlanContext, is_state_aware: 
     print(f"\tTask: {task['Name']}, Type: {taskType}")
     if taskType != None and taskType == "Group":
         return create_group_for_task(task, deliverable)
-    else:
-        # Create an agent based on the task
-        # We use an assistant agent as we do not need human interaction for this demo
-        assistant = autogen.AssistantAgent( #autogen.ConversableAgent( #
-            name=task['Name'],
-            system_message=task['InitialMessage'],
-            #description=task['Description'],
-            llm_config=llm_config,
-            max_consecutive_auto_reply=1
-        )
-        
+    else:     
         if is_state_aware == True:
             # Instantiate a StateAware object. Its parameters are all optional.
             #state_aware_ability = StateAware(
@@ -87,7 +85,20 @@ def create_agent_for_task(task: json, deliverable: PlanContext, is_state_aware: 
                 verbosity=2,
                 context= AgentContext(deliverable, task['Id'], task['Name'], taskType)
             )
+            
+            history_messages = state_aware_ability.recollect()
 
+            # Create an agent based on the task
+            # We use an assistant agent as we do not need human interaction for this demo
+            assistant = autogen.AssistantAgent( #autogen.ConversableAgent( #
+                name=task['Name'],
+                system_message=task['InitialMessage'],
+                #description=task['Description'],
+                llm_config=llm_config,
+                max_consecutive_auto_reply=1,
+                chat_messages=history_messages
+            )
+        
             # Now add state_aware_ability to the agent
             state_aware_ability.add_to_agent(assistant)
     
@@ -118,6 +129,7 @@ def build_agent_list_with_prereqs(agents: list, tasks: list):
             "chat_id": task['Id'],
             "recipient": agent,
             "message": agent.system_message,
+            "clear_history": False, # Do not clear the history
             "max_turns": 5,
             "summary_method": "last_msg",
             "silent": False,
@@ -134,6 +146,7 @@ def build_agent_list(agents: list):
         agent_list.append({
             "recipient": agent,
             "message": agent.system_message,
+            "clear_history": False, # Do not clear the history
             "max_turns": 1,
             "summary_method": "last_msg",
         })
@@ -169,7 +182,7 @@ def run_sequential_tasks(deliverable: AgentContext, step: json, carry_over: str)
     
     print(f"\tName: {step['Name']}, InitialMessage: {step['InitialMessage']}, Description: {step['Description']}")
     
-    if(group_managers.__len__() > 0):
+    if(len(group_managers) > 0):
         chat_results = step_agent.initiate_chats(build_agent_list(group_managers))
         
         # For each groupchat manager we store their conversation history so we can retrieve it afterward
