@@ -6,6 +6,7 @@ from chromadb.config import Settings
 # from database import Tasks
 import regex
 import json
+import uuid
 
 from autogen.agentchat.assistant_agent import ConversableAgent
 from autogen.agentchat.contrib.capabilities.agent_capability import AgentCapability
@@ -15,6 +16,7 @@ from termcolor import colored
 
 from models.agent_context import AgentContext, PlanContext
 from models.agent_memory import Event, Memory
+from models.agent_tasks import Tasks
 
 class StateAwareNonLlm(AgentCapability):
     """
@@ -41,12 +43,9 @@ class StateAwareNonLlm(AgentCapability):
         self,
         context: AgentContext,
         verbosity: Optional[int] = 0,
-        #reset_db: Optional[bool] = False,
-        #path_to_db_dir: Optional[str] = "./tmp/state_aware_agent_db",
         recall_threshold: Optional[float] = 1.5,
         max_num_retrievals: Optional[int] = 10,
         llm_config: Optional[Union[Dict, bool]] = None
-        # task_db = Tasks()
     ):
         """
         Args:
@@ -59,22 +58,18 @@ class StateAwareNonLlm(AgentCapability):
                 If None, TextAnalyzerAgent uses llm_config from the teachable agent.
         """
         self.verbosity = verbosity
-        #self.path_to_db_dir = path_to_db_dir
         self.recall_threshold = recall_threshold
         self.max_num_retrievals = max_num_retrievals
         self.llm_config = llm_config
         self.message_count = 0
-        # self.task_db = task_db
 
         self.analyzer = None
         self.state_aware_agent = None
         self.memory = Memory(context.planContext.planId, context.taskName, context.taskId)
-
-        # Create the memo store.
-        #self.memo_store = MemoStore(self.verbosity, reset_db, self.path_to_db_dir)
+        self.tasks = Tasks(context.planContext.planId, context.taskName, context.taskId)
 
         # Print the list
-        # task_db.print_tasks()
+        #self.tasks.print_tasks()
 
     def retrieve_steps(self, text: Union[Dict, str])->str:
         """Tries to retrieve the steps needed to complete a task."""
@@ -89,12 +84,9 @@ class StateAwareNonLlm(AgentCapability):
         """Adds state_aware capability to the given agent."""
         self.state_aware_agent = agent
 
-        # # Save this task (the agents name is the task) to the db if it doesn't already exist
-        # if (not self.task_db.task_exists(agent.name)):
-        #     self.task_db.add_task(agent.name, agent.description)
-        #task = self.memo_store.get_task_str(agent.name)
-        #if task.rfind(f"{agent.name}") == -1:
-        #    self.memo_store.save_task_to_db(f"{agent.name}: Not Done")
+        # Save this task to the db if it doesn't already exist
+        if (not self.tasks.task_exists(self.tasks.taskId)):
+            self.tasks.add_task(self.tasks.taskId, agent.name, agent.description)
 
         # Register hooks for processing the last message and one for before the message is sent in order to
         # determine if the task was completed.
@@ -156,7 +148,9 @@ class StateAwareNonLlm(AgentCapability):
             steps = regex.findall(pattern, required_steps)
 
             for step in steps:
-                continue #self.task_db.add_task(self.state_aware_agent.name + "-subtask", step)
+                # create a unique id for this task
+                subtaskId = str(uuid.uuid4())
+                self.tasks.add_task(subtaskId, self.state_aware_agent.name + "-subtask", step)
 
             text = f"""
             This is your task: 
@@ -186,27 +180,20 @@ class StateAwareNonLlm(AgentCapability):
         # If the agent is conversing, update the state to in progress. If the message the agent is about to send
         # contains the Done message, update the db to indicate the task is done
         # extract the json from the message and use that to update the tasks
-        json_str = message.split("=")[1]
-        response_json = json.loads(json_str)
+        response_json = ""
+        if (message.find("=") != -1):
+            json_str = message.split("=")[1]
+            response_json = json.loads(json_str)
+        else:
+            response_json = json.loads(message)
 
         for step in response_json['Steps']:
-            continue
-            # self.task_db.update_task(self.state_aware_agent.name + "-subtask", step["STEP"], step["DETAIL"], step["STATUS"])
+            self.tasks.update_task(self.state_aware_agent.name + "-subtask", step["STEP"], step["DETAIL"], step["STATUS"], message)
 
         self.memory.save_to_memory(
             event = Event(message_type=self.MESSAGE_TYPE, message=message, role=self.AGENT_ROLE)
         )
-        #expanded_text = self._retrieve_task_from_db(text)
-        # Try to retrieve relevant memos from the DB.
-        #expanded_text = text
-        #if self.memo_store.last_memo_id > 0:
-        #    expanded_text = self._consider_memo_retrieval(text)
 
-        # Try to store any user teachings in new memos to be used in the future.
-        #self._consider_memo_storage(text)
-
-        # Return the (possibly) expanded message text.
-        #return expanded_text
         return message
 
     # def _consider_memo_storage(self, comment: Union[Dict, str]):
