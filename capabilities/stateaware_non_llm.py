@@ -219,7 +219,7 @@ class StateAwareNonLlm(AgentCapability):
             response_json = json.loads(json_str)
             
         for step in response_json['Steps']:
-            self.tasks.update_task(self.state_aware_agent.name + "-subtask", step["STEP"], step["DETAIL"], step["STATUS"], message)
+            self.tasks.update_task(self.state_aware_agent.name + "-subtask", step["STEP"], step["DETAIL"], step["STATUS"], message.get("content"))
 
         self.memory.save_to_memory(
             event = Event(message_type=self.MESSAGE_TYPE, message=message.get("content"), role=self.__get_role__(message))
