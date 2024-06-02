@@ -5,8 +5,9 @@ class PlanContext:
         self.deliverableName = deliverableName
         
 class AgentContext:
-    def __init__(self, planContext: PlanContext, taskId: str, taskName: str, taskType: str):
+    def __init__(self, planContext: PlanContext, taskId: str, taskName: str, parentAgentName: str): #, taskType: str):
         self.planContext = planContext
         self.taskId = taskId
         self.taskName = taskName
-        self.taskType = taskType
+        self.parent_agent_name = parentAgentName
+        # self.taskType = taskType

@@ -71,7 +71,7 @@ class StateAwareNonLlm(AgentCapability):
         self.analyzer = None
         self.state_aware_agent = None
         self.memory = Memory(context.planContext.planId, context.taskName, context.taskId)
-        
+        self.agent_context = context
         # Print the list
         # task_db.print_tasks()
 
@@ -95,6 +95,9 @@ class StateAwareNonLlm(AgentCapability):
         #if task.rfind(f"{agent.name}") == -1:
         #    self.memo_store.save_task_to_db(f"{agent.name}: Not Done")
 
+        # Enable resuming by recollecting what we've done so far BEFORE registering hooks
+        self.recollect()
+        
         # Register hooks for processing the last message and one for before the message is sent in order to
         # determine if the task was completed.
         # For each incoming message we handle it accordingly
@@ -102,8 +105,6 @@ class StateAwareNonLlm(AgentCapability):
         # For each outgoing message we store it in memory
         agent.register_hook(hookable_method="process_message_before_send", hook=self.process_message_before_send)
         
-        # Enable resuming by recollecting what we've done so far
-        ##self.recollect()
 
         # TODO: Check if this task was already done. If so, tell the agent the work was already done (probably need
         # to also get the outcome - so might need to save that when the agent finishes the task so it can be passed
@@ -122,14 +123,13 @@ class StateAwareNonLlm(AgentCapability):
         """
         events = self.memory.retrieve_memory(lookback=50)
         
-        messages = defaultdict(list)
+        #messages = defaultdict(list)
         for event in events:
             if event.message_type == self.MESSAGE_TYPE:
-                messages[Agent].append({"content": event.message, "role": event.role})
+                self.state_aware_agent.send({"content": event.message, "role": event.role}, self.state_aware_agent, silent=True)
+                #messages[Agent].append({"content": event.message, "role": event.role})
         
-        return messages
-        #self.state_aware_agent. = messages
-        # self.state_aware_agent.chat_messages = messages
+        #return messages
         
     def process_last_received_message(self, text: Union[Dict, str]):
         """
@@ -137,12 +137,16 @@ class StateAwareNonLlm(AgentCapability):
         so we can keep track of completed items.
         """
         
-        response_instructions = """
-        At the end of your response, use a single = as a delimeter to show the exact verbiage of the step or steps you performed as well as a status for that step. 
+        response_format = """
+        At the end of your response, use a single = as a delimeter followed by a JSON string of step or steps you performed as well as a status for each step. 
         The format should be a single line with a JSON formatted string in the format: {"Steps": [{ "STEP": "your first task here", "STATUS": "status of the step", "DETAIL": "additional detail" }, { "STEP": "your second task here", "STATUS": "status of the step", "DETAIL": "additional detail" }]}
         Valid statuses are: IN_PROGRESS, BLOCKED, TODO. Do not use any other status outside of these three.
         The "Detail" property will include any additional detail such as error messages or asking for additional information or documents needed to complete the step.
-        Do not include additional detail at the end of your response.       
+        Do not include additional detail at the end of your response. 
+        """
+        
+        response_instructions =  f"""{response_format}   
+        If you need additional detail or feedback ASK the {self.agent_context.parent_agent_name} for it. Do not assume the {self.agent_context.parent_agent_name} knows what you need.  
         """
         # response_instructions = """
         # At the end of your response ensure to include the exact verbiage of the step or steps you performed as well as a status for that step. 
@@ -167,7 +171,7 @@ class StateAwareNonLlm(AgentCapability):
             {text}
             
             -----
-            To complete this task:
+            To complete this task, follow these steps and DO NOT repeat any step that has already been completed:
             {required_steps}
             
             ----
