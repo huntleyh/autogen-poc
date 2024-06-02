@@ -17,6 +17,7 @@ from termcolor import colored
 from models.agent_context import AgentContext, PlanContext
 from models.agent_memory import Event, Memory
 from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Type, TypeVar, Union
+import json
 
 class StateAwareNonLlm(AgentCapability):
     """
@@ -191,6 +192,13 @@ class StateAwareNonLlm(AgentCapability):
         
         return text    
     
+    def isValidJson(self, json_str: str)->bool:
+        try:
+            json.loads(json_str)
+        except ValueError as e:
+            return False
+        return True
+    
     def process_message_before_send(self, message: Union[Dict, str], sender: Agent, recipient: Agent, silent: bool):
         """
         Appends any relevant memos to the message text, and stores any apparent teachings in new memos.
@@ -201,9 +209,17 @@ class StateAwareNonLlm(AgentCapability):
         # If the agent is conversing, update the state to in progress. If the message the agent is about to send
         # contains the Done message, update the db to indicate the task is done
         # extract the json from the message and use that to update the tasks
-        json_str = message.get('content').split("=")[1]
-        response_json = json.loads(json_str)
-
+        message_parts = message.get('content').split("=")
+        response_json = {}
+        
+        if(len(message_parts) > 1) and self.isValidJson(message_parts[1]):
+            json_str = message_parts[1]
+            response_json = json.loads(json_str)
+            
+        elif len(message_parts) > 0 and self.isValidJson(message_parts[0]):
+            json_str = message_parts[0]
+            response_json = json.loads(json_str)
+            
         for step in response_json['Steps']:
             continue
             # self.task_db.update_task(self.state_aware_agent.name + "-subtask", step["STEP"], step["DETAIL"], step["STATUS"])

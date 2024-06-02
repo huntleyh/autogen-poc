@@ -16,6 +16,8 @@ llm_config = {"config_list": config_list}
 
 SEQUENTIAL_STEP = "SequentialStep"
 PARALLEL_STEP = "ParallelStep"
+MAX_TURNS_PER_AGENT = 5
+MAX_ROUNDS_PER_GROUP_CHAT = 12
 
 # Retrieve the existing plan for a customer
 def retrieve_plan(customer_id: str, file_name: str):
@@ -52,7 +54,7 @@ def create_group_for_task(groupTask: json, deliverable: PlanContext, parent_agen
         agents.append(create_agent_for_task(task=task, deliverable=deliverable, parent_agent_name=parent_agent_name, is_state_aware=is_state_aware))
         
     # Create a groupchat and groupchat manager based on the task
-    groupchat = autogen.GroupChat(agents=agents, messages=[], max_round=12)
+    groupchat = autogen.GroupChat(agents=agents, messages=[], max_round=MAX_ROUNDS_PER_GROUP_CHAT)
     manager = autogen.GroupChatManager(groupchat=groupchat, llm_config=llm_config, name=groupTask['Name'], system_message=groupTask['InitialMessage'])
 
     # if True: #is_state_aware == True:
@@ -149,7 +151,7 @@ def build_agent_list_with_prereqs(agents: list, tasks: list):
             "recipient": agent,
             "message": agent.system_message,
             "clear_history": False, # Do not clear the history
-            "max_turns": 5,
+            "max_turns": MAX_TURNS_PER_AGENT,
             "summary_method": "last_msg",
             "silent": False,
             "prerequisites": prerequisites
@@ -168,7 +170,7 @@ def build_agent_list(agents: list, user_feedback: str = None, clear_history: boo
             "recipient": agent,
             "message": message, #agent.system_message,
             "clear_history": clear_history, # Do not clear the history
-            "max_turns": 1,
+            "max_turns": MAX_TURNS_PER_AGENT,
             "summary_method": "last_msg",
         })
     
