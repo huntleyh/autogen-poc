@@ -32,6 +32,7 @@ async def execute_plan(plan: json):
     carry_over = ""
     user_feedback = None
     #user_feedback = "For the 3rd step \"How many months are profitable\" you can assume the latest financial reports show a profit of 10% each month on average"
+    #user_feedback = "The name of the company is 'Disney World'"
     deliverable = retrieve_deliverable(plan)
     
     # Iterate over the "Steps" array
@@ -55,33 +56,12 @@ def create_group_for_task(groupTask: json, deliverable: PlanContext, parent_agen
         
     # Create a groupchat and groupchat manager based on the task
     groupchat = autogen.GroupChat(agents=agents, messages=[], max_round=MAX_ROUNDS_PER_GROUP_CHAT)
-    manager = autogen.GroupChatManager(groupchat=groupchat, llm_config=llm_config, name=groupTask['Name'], system_message=groupTask['InitialMessage'])
-
-    # if True: #is_state_aware == True:
-    #     # Instantiate a StateAware object. Its parameters are all optional.
-    #     state_aware_ability = StateAwareNonLlm(
-    #         verbosity=2,
-    #         context= AgentContext(deliverable, groupTask['Id'], groupTask['Name'])#, taskType)
-    #     )
-        
-    #     # Inject user feedback
-    #     # TODO: 
-
-    #     # Now add state_aware_ability to the agent
-    #     state_aware_ability.add_to_agent(manager)
-        
-        #state_aware_ability.recollect_and_hydrate()
-
-        # task_aware_ability = TaskTrackingbility(
-        # reset_db=False,  # Use True to force-reset the memo DB, and False to use an existing DB.
-        # path_to_db_dir="./tmp/interactive/stateaware_db",  # Can be any path, but StateAware agents in a group chat require unique paths.
-        # verbosity=2
-        # )
-        
-    # messages = retrieve_group_chat_messages(manager)
-    # if messages is not None:
-    #     groupchat.messages = messages
-        
+    manager = autogen.GroupChatManager(
+                    groupchat=groupchat, 
+                    llm_config=llm_config, 
+                    name=groupTask['Name'], 
+                    system_message=groupTask['InitialMessage'])
+    
     return manager
 
 def persist_messages_to_agent_memory(recipient, messages, sender, config): 
@@ -194,24 +174,29 @@ def run_sequential_tasks(deliverable: AgentContext, step: json, carry_over: str,
     
     user_proxy_system_message = user_feedback if user_feedback else step['InitialMessage']
     
-    # initiate the chat with the agents
-    # The Number Agent always returns the same numbers.
-    step_agent = autogen.UserProxyAgent( # autogen.AssistantAgent(
-        name=step['Name'],
-        #system_message=step['InitialMessage'],
-        description=step['Description'],
-        llm_config=llm_config,
-        #human_input_mode="NEVER",
-        max_consecutive_auto_reply=1,
-        code_execution_config=False,
-        is_termination_msg=lambda user_proxy_system_message: True # Always True so we terminate if we get a message to relay to the user
-    )
-    
     print(f"\tName: {step['Name']}, InitialMessage: {step['InitialMessage']}, Description: {step['Description']}")
     
     if(len(group_managers) > 0):
-
-        chat_results = step_agent.initiate_chats(build_agent_list(group_managers, user_proxy_system_message))
+        # For each groupchat manager we store their conversation history so we can retrieve it afterward
+        # TODO: Move to a DB so we can handle store/retrieve better
+        manager: autogen.GroupChatManager = group_managers[0]
+        
+        # initiate the chat with the agents
+        # The Number Agent always returns the same numbers.
+        step_agent = autogen.UserProxyAgent( # autogen.AssistantAgent(
+            name=step['Name'],
+            system_message=user_proxy_system_message, #step['InitialMessage'],
+            description=step['Description'],
+            llm_config=llm_config,
+            human_input_mode="NEVER",
+            #max_consecutive_auto_reply=1,
+            code_execution_config=False,
+            is_termination_msg=lambda user_proxy_system_message: True # Always True so we terminate if we get a message to relay to the user
+        )
+        
+        manager.groupchat.agents.append(step_agent)
+        
+        chat_results = step_agent.initiate_chats(build_agent_list(group_managers)) #.initiate_chat(manager, message=user_proxy_system_message) #, user_proxy_system_message))
         
         # For each groupchat manager we store their conversation history so we can retrieve it afterward
         # TODO: Move to a DB so we can handle store/retrieve better
@@ -220,6 +205,20 @@ def run_sequential_tasks(deliverable: AgentContext, step: json, carry_over: str,
             
             persist_group_chat(manager)
     else:
+        
+        # initiate the chat with the agents
+        # The Number Agent always returns the same numbers.
+        step_agent = autogen.UserProxyAgent( # autogen.AssistantAgent(
+            name=step['Name'],
+            #system_message=step['InitialMessage'],
+            description=step['Description'],
+            llm_config=llm_config,
+            #human_input_mode="NEVER",
+            max_consecutive_auto_reply=1,
+            code_execution_config=False,
+            is_termination_msg=lambda user_proxy_system_message: True # Always True so we terminate if we get a message to relay to the user
+        )
+        
         chat_results = step_agent.initiate_chats(build_agent_list(agents, user_proxy_system_message))
     
     summary = chat_results[-1].summary
