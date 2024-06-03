@@ -7,13 +7,15 @@ from chromadb.config import Settings
 # from database import Tasks
 import regex
 import json
-import uuid
+#import uuid
 
 from autogen.agentchat.assistant_agent import ConversableAgent
 from autogen.agentchat.contrib.capabilities.agent_capability import AgentCapability
 from autogen.agentchat.contrib.text_analyzer_agent import TextAnalyzerAgent
 from autogen import Agent
 from termcolor import colored
+import string
+from string import digits
 
 from models.agent_context import AgentContext, PlanContext
 from models.agent_memory import Event, Memory
@@ -89,7 +91,7 @@ class StateAwareNonLlm(AgentCapability):
         self.state_aware_agent = agent
 
         # Save this task to the db if it doesn't already exist
-        if (not self.tasks.task_exists(self.tasks.taskId)):
+        if (not self.tasks.task_exists(self.tasks.taskId, agent.name, agent.description)):
             self.tasks.add_task(self.tasks.taskId, agent.name, agent.description)
 
         # Enable resuming by recollecting what we've done so far BEFORE registering hooks
@@ -126,6 +128,11 @@ class StateAwareNonLlm(AgentCapability):
                 self.state_aware_agent.send({"content": event.message, "role": event.role}, self.state_aware_agent, request_reply=False, silent=True)
                 #messages[Agent].append({"content": event.message, "role": event.role})
         
+        tasks = self.tasks.retrieve_tasks()
+
+        for task in tasks:
+            self.state_aware_agent.send({"content": task.task + ': ' + task.status, "role": 'assistant'}, self.state_aware_agent, request_reply=False, silent=True)
+
         #return messages
         
     def process_last_received_message(self, text: Union[Dict, str]):
@@ -137,13 +144,13 @@ class StateAwareNonLlm(AgentCapability):
         response_format = """
         At the end of your response, use a single = as a delimeter followed by a JSON string of step or steps you performed as well as a status for each step. 
         The format should be a single line with a JSON formatted string in the format: {"Steps": [{ "STEP": "your first task here", "STATUS": "status of the step", "DETAIL": "additional detail" }, { "STEP": "your second task here", "STATUS": "status of the step", "DETAIL": "additional detail" }]}
-        Valid statuses are: IN_PROGRESS, BLOCKED, TODO. Do not use any other status outside of these three.
+        Valid statuses are: DONE, IN_PROGRESS, BLOCKED, TODO. Do not use any other status outside of these three.
         The "Detail" property will include any additional detail such as error messages or asking for additional information or documents needed to complete the step.
         Do not include additional detail at the end of your response. 
         """
         
         response_instructions =  f"""{response_format}   
-        If you need additional detail or feedback ASK the {self.agent_context.parent_agent_name} for it. Do not assume the {self.agent_context.parent_agent_name} knows what you need.  
+        Check to make sure you have not already completed this step! If you need additional detail or feedback ASK the {self.agent_context.parent_agent_name} for it. Do not assume the {self.agent_context.parent_agent_name} knows what you need.  
         """
         # response_instructions = """
         # At the end of your response ensure to include the exact verbiage of the step or steps you performed as well as a status for that step. 
@@ -161,8 +168,10 @@ class StateAwareNonLlm(AgentCapability):
 
             for step in steps:
                 # create a unique id for this task
-                subtaskId = str(uuid.uuid4())
-                self.tasks.add_task(subtaskId, self.state_aware_agent.name + "-subtask", step)
+                #subtaskId = str(uuid.uuid4())
+                # Save this task to the db if it doesn't already exist
+                if not self.tasks.task_exists(self.tasks.taskId, self.state_aware_agent.name + "-subtask", step):
+                    self.tasks.add_task(self.tasks.taskId, self.state_aware_agent.name + "-subtask", step)
 
             text = f"""
             This is your task: 
@@ -217,9 +226,14 @@ class StateAwareNonLlm(AgentCapability):
         elif len(message_parts) > 0 and self.isValidJson(message_parts[0]):
             json_str = message_parts[0]
             response_json = json.loads(json_str)
-            
-        for step in response_json['Steps']:
-            self.tasks.update_task(self.state_aware_agent.name + "-subtask", step["STEP"], step["DETAIL"], step["STATUS"], message.get("content"))
+
+        if response_json.__len__() > 0:
+            for step in response_json['Steps']:
+                # strip the number out of the step (i.e., it may come in as '3. Get how many months are profitable')
+                strStep = (str)(step["STEP"])
+                strStep = strStep[strStep.find('.') + 1:]
+                #self.tasks.update_task(self.state_aware_agent.name + "-subtask", step["STEP"], step["DETAIL"], step["STATUS"], message.get("content"))
+                self.tasks.update_task(self.state_aware_agent.name + "-subtask", strStep.strip(), step["DETAIL"], step["STATUS"], message.get("content"))
 
         self.memory.save_to_memory(
             event = Event(message_type=self.MESSAGE_TYPE, message=message.get("content"), role=self.__get_role__(message))

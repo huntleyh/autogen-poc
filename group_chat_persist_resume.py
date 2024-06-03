@@ -33,6 +33,7 @@ async def execute_plan(plan: json):
     user_feedback = None
     #user_feedback = "For the 3rd step \"How many months are profitable\" you can assume the latest financial reports show a profit of 10% each month on average"
     #user_feedback = "The name of the company is 'Disney World'"
+    #user_feedback = "For the 3rd step \"How many months are profitable\" you can assume the latest financial reports show a profit of 10% each month on average."
     deliverable = retrieve_deliverable(plan)
     
     # Iterate over the "Steps" array

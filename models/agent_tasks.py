@@ -3,6 +3,13 @@ import pyodbc
 
 from termcolor import colored
 
+class Task:
+    def __init__(self, is_subtask, task, status, detail):
+        self.is_subtask = is_subtask
+        self.task = task
+        self.status = status
+        self.detail = detail
+
 class Tasks:
     def __init__(self, planId, agentName, taskId):
         # Sample connection string: replace with your actual connection string
@@ -65,7 +72,7 @@ class Tasks:
         except pyodbc.Error as e:
             print(f"Error updating task: {e}")
     
-    def task_exists(self, taskId: str):
+    def task_exists(self, taskId: str, agent_name: str, task: str):
         try:
             task_exists = False
 
@@ -73,8 +80,8 @@ class Tasks:
             cursor = conn.cursor()
 
             # Call the stored procedure with the appropriate parameters
-            cursor.execute("EXECUTE dbo.RetrieveTask ?",
-                            taskId)
+            cursor.execute("EXECUTE dbo.RetrieveTask ?, ?, ?",
+                            taskId, agent_name, task)
             
             row = cursor.fetchval()
 
@@ -87,3 +94,36 @@ class Tasks:
             return task_exists
         except pyodbc.Error as e:
             print(f"Error updating task: {e}")
+    
+    def retrieve_tasks(self)->list[Task]:
+        try:
+            conn = pyodbc.connect(self.connection_string)
+            cursor = conn.cursor()
+
+            # Call the stored procedure with the appropriate parameters
+            cursor.execute("EXECUTE dbo.RetrieveTasks ?, ?",
+                            self.planId, self.taskId)
+            rows = cursor.fetchall()
+
+            columns = [column[0] for column in cursor.description]
+            rows = [dict(zip(columns, row)) for row in rows]
+
+            cursor.close()
+            conn.close()
+
+            tasks = []
+            for row in rows:
+                is_subtask = False
+                agent_name = str(row['AgentName'])
+                if agent_name.find('-subtask') != -1:
+                    is_subtask = True
+                task = row['Task']
+                status = row['Status']
+                detail = row['Detail']
+                task = Task(is_subtask, task, status, detail)
+                tasks.append(task)
+            
+            return tasks
+        except pyodbc.Error as e:
+            print(f"Error retrieving tasks: {e}")
+            return []
