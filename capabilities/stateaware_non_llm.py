@@ -123,7 +123,7 @@ class StateAwareNonLlm(AgentCapability):
         #messages = defaultdict(list)
         for event in events:
             if event.message_type == self.MESSAGE_TYPE:
-                self.state_aware_agent.send({"content": event.message, "role": event.role}, self.state_aware_agent, silent=True)
+                self.state_aware_agent.send({"content": event.message, "role": event.role}, self.state_aware_agent, request_reply=False, silent=True)
                 #messages[Agent].append({"content": event.message, "role": event.role})
         
         #return messages
