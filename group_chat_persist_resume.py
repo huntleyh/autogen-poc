@@ -31,7 +31,7 @@ def retrieve_plan(customer_id: str, file_name: str):
 async def execute_plan(plan: json):
     carry_over = ""
     user_feedback = None
-    #user_feedback = "For the 3rd step \"How many months are profitable\" you can assume the latest financial reports show a profit of 10% each month on average"
+    #user_feedback = "For the 3rd step \"How many months are profitable\" you can assume the latest financial reports show a profit of 10% each month on average."
     deliverable = retrieve_deliverable(plan)
     
     # Iterate over the "Steps" array
