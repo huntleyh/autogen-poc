@@ -77,17 +77,25 @@ class StateAwareNonLlm(AgentCapability):
         self.agent_context = context
         self.is_group_manager = is_group_manager
         self.is_recollecting = False
-        # Print the list
-        #self.tasks.print_tasks()
 
     def retrieve_steps(self, text: Union[Dict, str])->str:
         """Tries to retrieve the steps needed to complete a task."""
         
-        return """
-            1. Get name of company
-            2. Get how long the company's been in business
-            3. Get how many months are profitable
-            """
+        if self.state_aware_agent.name == "Analyst":
+            return """
+                1. Get name of company
+                2. Get how long the company's been in business
+                3. Get how many months are profitable
+                """
+        elif self.state_aware_agent.name == "Researcher":
+            return """
+                1. Get name of company
+                2. Get the current CTO of the company
+                """
+        elif self.state_aware_agent.name == "Critic":
+            return """
+                1. Ensure the final output is complete
+                """
 
     def add_to_agent(self, agent: ConversableAgent):
         """Adds state_aware capability to the given agent."""
@@ -108,23 +116,11 @@ class StateAwareNonLlm(AgentCapability):
         agent.register_hook(hookable_method="process_message_before_send", hook=self.process_message_before_send)
         
 
-        # TODO: Check if this task was already done. If so, tell the agent the work was already done (probably need
-        # to also get the outcome - so might need to save that when the agent finishes the task so it can be passed
-        # to the next agent)
-
-        # Append extra info to the system message.
-        # agent.update_system_message(
-        #     # Instruct the agent to state explicitly that when this task is done, respond with "<task>: Done."
-        #     # This may be something a user will need to supply though / check?
-        #     agent.system_message + f"\nWhen you complete the ask, respond with: {agent.name}: Done"
-        # )
-
-    def recollect(self)->List: #Dict[Agent, List[Dict]]:
-    #def recollect(self)->list[Dict]: #Dict[Agent, List[Dict]]:
+    def recollect(self)->List:
         """
         Hydrates the agent with the necessary information to recollect previous runs.
         """
-        #messages: List[Dict] = []
+        
         messages: List = []
         
         try:
@@ -133,16 +129,11 @@ class StateAwareNonLlm(AgentCapability):
             events = self.memory.retrieve_memory(lookback=50)
             
             if len(events) > 0:
-                #agent_messages = {Agent: []}
                 for event in events:
                     if event.message_type == self.MESSAGE_TYPE:
-                        #self.state_aware_agent.send({"content": event.message, "role": event.role}, self.state_aware_agent, request_reply=False, silent=True)
                         self.message_count += 1
-                        #agent_messages[Agent].append({"content": event.message, "role": event.role, "name": self.state_aware_agent.name})
                         messages.append({"content": event.message, "role": event.role, "name": self.state_aware_agent.name})
                         
-                #messages.append(agent_messages)
-                
             if self.is_group_manager == False:
                 tasks = self.tasks.retrieve_tasks()
 
@@ -176,13 +167,7 @@ class StateAwareNonLlm(AgentCapability):
         response_instructions =  f"""{response_format}   
         Check to make sure you have not already completed this step! If you need additional detail or feedback ASK the {self.agent_context.parent_agent_name} for it. Do not assume the {self.agent_context.parent_agent_name} knows what you need.  
         """
-        # response_instructions = """
-        # At the end of your response ensure to include the exact verbiage of the step or steps you performed as well as a status for that step. 
-        # The format should be two lines with the first line being: "STEP: {your task here}"
-        # and the second line: "STATUS: {status of the step}"
-        # Valid statuses are: IN_PROGRESS, BLOCKED, TODO.
-        # Do not include additional detail at the end of your response.       
-        # """
+
         if self.message_count == 0 and self.is_group_manager == False:
             # hardcoded for now; will update json to showcase if needed, but this will ideally come from a
             # data store that contains all agents and their tasks
@@ -191,8 +176,6 @@ class StateAwareNonLlm(AgentCapability):
             steps = regex.findall(pattern, required_steps)
 
             for step in steps:
-                # create a unique id for this task
-                #subtaskId = str(uuid.uuid4())
                 # Save this task to the db if it doesn't already exist
                 if not self.tasks.task_exists(self.tasks.taskId, self.state_aware_agent.name + "-subtask", step):
                     self.tasks.add_task(self.tasks.taskId, self.state_aware_agent.name + "-subtask", step)
@@ -260,7 +243,6 @@ class StateAwareNonLlm(AgentCapability):
                     # strip the number out of the step (i.e., it may come in as '3. Get how many months are profitable')
                     strStep = (str)(step["STEP"])
                     strStep = strStep[strStep.find('.') + 1:]
-                    #self.tasks.update_task(self.state_aware_agent.name + "-subtask", step["STEP"], step["DETAIL"], step["STATUS"], message.get("content"))
                     self.tasks.update_task(self.state_aware_agent.name + "-subtask", strStep.strip(), step["DETAIL"], step["STATUS"], message.get("content"))
 
         self.memory.save_to_memory(
