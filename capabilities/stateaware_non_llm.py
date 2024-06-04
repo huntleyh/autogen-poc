@@ -50,7 +50,8 @@ class StateAwareNonLlm(AgentCapability):
         verbosity: Optional[int] = 0,
         recall_threshold: Optional[float] = 1.5,
         max_num_retrievals: Optional[int] = 10,
-        llm_config: Optional[Union[Dict, bool]] = None
+        llm_config: Optional[Union[Dict, bool]] = None,
+        is_group_manager: Optional[bool] = False
     ):
         """
         Args:
@@ -74,6 +75,8 @@ class StateAwareNonLlm(AgentCapability):
         self.tasks = Tasks(context.planContext.planId, context.taskName, context.taskId)
 
         self.agent_context = context
+        self.is_group_manager = is_group_manager
+        self.is_recollecting = False
         # Print the list
         #self.tasks.print_tasks()
 
@@ -95,7 +98,7 @@ class StateAwareNonLlm(AgentCapability):
             self.tasks.add_task(self.tasks.taskId, agent.name, agent.description)
 
         # Enable resuming by recollecting what we've done so far BEFORE registering hooks
-        self.recollect()
+        #self.recollect()
         
         # Register hooks for processing the last message and one for before the message is sent in order to
         # determine if the task was completed.
@@ -116,24 +119,42 @@ class StateAwareNonLlm(AgentCapability):
         #     agent.system_message + f"\nWhen you complete the ask, respond with: {agent.name}: Done"
         # )
 
-    def recollect(self)->list[Dict]: #Dict[Agent, List[Dict]]:
+    def recollect(self)->List: #Dict[Agent, List[Dict]]:
+    #def recollect(self)->list[Dict]: #Dict[Agent, List[Dict]]:
         """
         Hydrates the agent with the necessary information to recollect previous runs.
         """
-        events = self.memory.retrieve_memory(lookback=50)
+        #messages: List[Dict] = []
+        messages: List = []
         
-        #messages = defaultdict(list)
-        for event in events:
-            if event.message_type == self.MESSAGE_TYPE:
-                self.state_aware_agent.send({"content": event.message, "role": event.role}, self.state_aware_agent, request_reply=False, silent=True)
-                #messages[Agent].append({"content": event.message, "role": event.role})
+        try:
+            self.is_recollecting = True
         
-        tasks = self.tasks.retrieve_tasks()
+            events = self.memory.retrieve_memory(lookback=50)
+            
+            if len(events) > 0:
+                #agent_messages = {Agent: []}
+                for event in events:
+                    if event.message_type == self.MESSAGE_TYPE:
+                        #self.state_aware_agent.send({"content": event.message, "role": event.role}, self.state_aware_agent, request_reply=False, silent=True)
+                        self.message_count += 1
+                        #agent_messages[Agent].append({"content": event.message, "role": event.role, "name": self.state_aware_agent.name})
+                        messages.append({"content": event.message, "role": event.role, "name": self.state_aware_agent.name})
+                        
+                #messages.append(agent_messages)
+                
+            if self.is_group_manager == False:
+                tasks = self.tasks.retrieve_tasks()
 
-        for task in tasks:
-            self.state_aware_agent.send({"content": task.task + ': ' + task.status, "role": 'assistant'}, self.state_aware_agent, request_reply=False, silent=True)
-
-        #return messages
+                for task in tasks:
+                    self.state_aware_agent.send({"content": task.task + ': ' + task.status, "role": 'assistant'}, self.state_aware_agent, request_reply=False, silent=True)
+                    
+        except Exception as e:
+            print(f"Error: {e}")
+            
+        self.is_recollecting = False
+        
+        return messages
         
     def process_last_received_message(self, text: Union[Dict, str]):
         """
@@ -141,11 +162,14 @@ class StateAwareNonLlm(AgentCapability):
         so we can keep track of completed items.
         """
         
+        if self.is_recollecting:
+            return text
+        
         response_format = """
         At the end of your response, use a single = as a delimeter followed by a JSON string of step or steps you performed as well as a status for each step. 
         The format should be a single line with a JSON formatted string in the format: {"Steps": [{ "STEP": "your first task here", "STATUS": "status of the step", "DETAIL": "additional detail" }, { "STEP": "your second task here", "STATUS": "status of the step", "DETAIL": "additional detail" }]}
         Valid statuses are: DONE, IN_PROGRESS, BLOCKED, TODO. Do not use any other status outside of these three.
-        The "Detail" property will include any additional detail such as error messages or asking for additional information or documents needed to complete the step.
+        The "Detail" property MUST ALWAYS BE PRESENT and will include any additional detail such as error messages or asking for additional information or documents needed to complete the step.
         Do not include additional detail at the end of your response. 
         """
         
@@ -159,7 +183,7 @@ class StateAwareNonLlm(AgentCapability):
         # Valid statuses are: IN_PROGRESS, BLOCKED, TODO.
         # Do not include additional detail at the end of your response.       
         # """
-        if self.message_count == 0:
+        if self.message_count == 0 and self.is_group_manager == False:
             # hardcoded for now; will update json to showcase if needed, but this will ideally come from a
             # data store that contains all agents and their tasks
             required_steps = self.retrieve_steps(text)
@@ -179,7 +203,7 @@ class StateAwareNonLlm(AgentCapability):
             {text}
             
             -----
-            To complete this task, follow these steps and DO NOT repeat any step that has already been completed:
+            To complete this task, follow ALL these steps for the ENTIRE conversation and DO NOT repeat any step that has already been completed:
             {required_steps}
             
             ----
@@ -211,7 +235,10 @@ class StateAwareNonLlm(AgentCapability):
         Appends any relevant memos to the message text, and stores any apparent teachings in new memos.
         Uses TextAnalyzerAgent to make decisions about memo storage and retrieval.
         """
-
+        
+        if self.is_recollecting or silent == True:
+            return message
+        
         message = ConversableAgent._message_to_dict(message)
         # If the agent is conversing, update the state to in progress. If the message the agent is about to send
         # contains the Done message, update the db to indicate the task is done
@@ -228,15 +255,16 @@ class StateAwareNonLlm(AgentCapability):
             response_json = json.loads(json_str)
 
         if response_json.__len__() > 0:
-            for step in response_json['Steps']:
-                # strip the number out of the step (i.e., it may come in as '3. Get how many months are profitable')
-                strStep = (str)(step["STEP"])
-                strStep = strStep[strStep.find('.') + 1:]
-                #self.tasks.update_task(self.state_aware_agent.name + "-subtask", step["STEP"], step["DETAIL"], step["STATUS"], message.get("content"))
-                self.tasks.update_task(self.state_aware_agent.name + "-subtask", strStep.strip(), step["DETAIL"], step["STATUS"], message.get("content"))
+            if self.is_group_manager == False:
+                for step in response_json['Steps']:
+                    # strip the number out of the step (i.e., it may come in as '3. Get how many months are profitable')
+                    strStep = (str)(step["STEP"])
+                    strStep = strStep[strStep.find('.') + 1:]
+                    #self.tasks.update_task(self.state_aware_agent.name + "-subtask", step["STEP"], step["DETAIL"], step["STATUS"], message.get("content"))
+                    self.tasks.update_task(self.state_aware_agent.name + "-subtask", strStep.strip(), step["DETAIL"], step["STATUS"], message.get("content"))
 
         self.memory.save_to_memory(
-            event = Event(message_type=self.MESSAGE_TYPE, message=message.get("content"), role=self.__get_role__(message))
+        event = Event(message_type=self.MESSAGE_TYPE, message=message.get("content"), role=self.__get_role__(message))
         )
         
         return message
@@ -249,125 +277,3 @@ class StateAwareNonLlm(AgentCapability):
             return message.get("role")
         
         return "assistant"
-
-class MemoStore:
-    """
-    Provides memory storage and retrieval for a teachable agent, using a vector database.
-    Each DB entry (called a memo) is a pair of strings: an input text and an output text.
-    The input text might be a question, or a task to perform.
-    The output text might be an answer to the question, or advice on how to perform the task.
-    Vector embeddings are currently supplied by Chroma's default Sentence Transformers.
-    """
-
-    def __init__(
-        self,
-        verbosity: Optional[int] = 0,
-        reset: Optional[bool] = False,
-        path_to_db_dir: Optional[str] = "./tmp/state_aware_agent_db",
-    ):
-        """
-        Args:
-            - verbosity (Optional, int): 1 to print memory operations, 0 to omit them. 3+ to print memo lists.
-            - reset (Optional, bool): True to clear the DB before starting. Default False.
-            - path_to_db_dir (Optional, str): path to the directory where the DB is stored.
-        """
-        self.verbosity = verbosity
-        self.path_to_db_dir = path_to_db_dir
-
-        # Load or create the vector DB on disk.
-        settings = Settings(
-            anonymized_telemetry=False, allow_reset=True, is_persistent=True, persist_directory=path_to_db_dir
-        )
-        self.db_client = chromadb.Client(settings)
-        self.vec_db = self.db_client.create_collection("memos", get_or_create=True)  # The collection is the DB.
-
-        # Load or create the associated memo dict on disk.
-        self.path_to_dict = os.path.join(path_to_db_dir, "uid_text_dict.pkl")
-        self.uid_text_dict = {}
-        self.last_memo_id = 0
-        if (not reset) and os.path.exists(self.path_to_dict):
-            print(colored("\nLOADING MEMORY FROM DISK", "light_green"))
-            print(colored("    Location = {}".format(self.path_to_dict), "light_green"))
-            with open(self.path_to_dict, "rb") as f:
-                self.uid_text_dict = pickle.load(f)
-                self.last_memo_id = len(self.uid_text_dict)
-                if self.verbosity >= 3:
-                    self.list_memos()
-
-        # Clear the DB if requested.
-        if reset:
-            self.reset_db()
-
-    def list_memos(self):
-        """Prints the contents of MemoStore."""
-        print(colored("LIST OF TASKS", "light_green"))
-        for uid, text in self.uid_text_dict.items():
-            task, status = text
-            print(
-                colored(
-                    "  ID: {}\n    TASK: {}\n    STATUS: {}".format(uid, task, status),
-                    "light_green",
-                )
-            )
-
-    def _save_memos(self):
-        """Saves self.uid_text_dict to disk."""
-        with open(self.path_to_dict, "wb") as file:
-            pickle.dump(self.uid_text_dict, file)
-
-    def reset_db(self):
-        """Forces immediate deletion of the DB's contents, in memory and on disk."""
-        print(colored("\nCLEARING MEMORY", "light_green"))
-        self.db_client.delete_collection("tasks")
-        self.vec_db = self.db_client.create_collection("tasks")
-        self.uid_text_dict = {}
-        self._save_memos()
-
-    def save_task_to_db(self, task: str):
-        print(self.vec_db.count()+1)
-        self.vec_db.add(documents=[task], ids=[str(self.vec_db.count()+1)])
-        print(colored(f"SAVING TASK TO DB: {task}", "light_green"))
-
-    def update_task(self, task: str):
-        # get the task's id
-        result = self.get_task(task)
-        self.vec_db.update(ids=[str(result["ids"][0][0])], documents=[task])
-
-    def get_task_str(self, task: str):
-        result = self.vec_db.query(query_texts=[task], n_results=1)
-
-        return str(result["documents"][0][0])
-    
-    def get_task(self, task: str):
-        result = self.vec_db.query(query_texts=[task], n_results=1)
-
-        return result
-    
-    def list_tasks(self):
-        results = self.vec_db.get()
-
-        print(results["documents"])
-
-    def get_related_memos(self, query_text: str, n_results: int, threshold: Union[int, float]):
-        """Retrieves memos that are related to the given query text within the specified distance threshold."""
-        if n_results > len(self.uid_text_dict):
-            n_results = len(self.uid_text_dict)
-        results = self.vec_db.query(query_texts=[query_text], n_results=n_results)
-        memos = []
-        num_results = len(results["ids"][0])
-        for i in range(num_results):
-            uid, input_text, distance = results["ids"][0][i], results["documents"][0][i], results["distances"][0][i]
-            if distance < threshold:
-                input_text_2, output_text = self.uid_text_dict[uid]
-                assert input_text == input_text_2
-                if self.verbosity >= 1:
-                    print(
-                        colored(
-                            "\nINPUT-OUTPUT PAIR RETRIEVED FROM VECTOR DATABASE:\n  INPUT1\n    {}\n  OUTPUT\n    {}\n  DISTANCE\n    {}".format(
-                                input_text, output_text, distance
-                            ),
-                            "light_yellow",
-                        )
-                    )
-                memos.append((input_text, output_text, distance))
-        return memos
