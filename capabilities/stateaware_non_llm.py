@@ -1,20 +1,11 @@
-from collections import defaultdict
-import os
-import pickle
 from typing import Dict, Optional, Union
-import chromadb
-from chromadb.config import Settings
-# from database import Tasks
 import regex
 import json
-#import uuid
 
 from autogen.agentchat.assistant_agent import ConversableAgent
 from autogen.agentchat.contrib.capabilities.agent_capability import AgentCapability
-from autogen.agentchat.contrib.text_analyzer_agent import TextAnalyzerAgent
 from autogen import Agent
 from termcolor import colored
-import string
 from string import digits
 
 from models.agent_context import AgentContext, PlanContext
