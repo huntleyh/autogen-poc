@@ -7,3 +7,5 @@ adhoc-samples/
 __pycache__/
 tmp
 autogen-poc.zip
+group_chat_history_FS_manager.txt
+group_chat_history_client_profile_manager.txt

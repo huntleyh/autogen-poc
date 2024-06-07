@@ -71,21 +71,20 @@ class StateAwareNonLlm(AgentCapability):
 
     def retrieve_steps(self, text: Union[Dict, str])->str:
         """Tries to retrieve the steps needed to complete a task."""
-        
-        if self.state_aware_agent.name == "Analyst":
+
+        if self.state_aware_agent.name == "Assistant":
             return """
-                1. Get name of company
-                2. Get how long the company's been in business
-                3. Get how many months are profitable
+                1. Generate a random dollar amount in USD
+                2. Calculate how much this is in EUR
+                3. Determine how much this would have equated to 100 years ago
                 """
-        elif self.state_aware_agent.name == "Researcher":
+        elif self.state_aware_agent.name == "Executor":
             return """
-                1. Get name of company
-                2. Get the current CTO of the company
+                1. You are responsible of executing custom functions, you don't write your code
                 """
-        elif self.state_aware_agent.name == "Critic":
+        elif self.state_aware_agent.name == "Admin":
             return """
-                1. Ensure the final output is complete
+                1. Perform the currency conversion.
                 """
 
     def add_to_agent(self, agent: ConversableAgent):
@@ -228,7 +227,7 @@ class StateAwareNonLlm(AgentCapability):
             json_str = message_parts[0]
             response_json = json.loads(json_str)
 
-        if response_json.__len__() > 0:
+        if isinstance(response_json, str) and response_json.__len__() > 0:
             if self.is_group_manager == False:
                 for step in response_json['Steps']:
                     # strip the number out of the step (i.e., it may come in as '3. Get how many months are profitable')

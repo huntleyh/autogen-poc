@@ -1,1 +1,1 @@
-[{"content": "TBD", "role": "user", "name": "group_chat_1"}]
+[{"content": "Start the task for performing a currency conversion", "role": "user", "name": "group_chat_1"}]

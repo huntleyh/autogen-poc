@@ -2,8 +2,8 @@
   "group_chat_1":{
     "agent":
     [    
-      {"agent_variable":"user_proxy_1", "agent_name":"Admin", "type":"UserProxyAgent"},
-      {"agent_variable":"assistant_1", "agent_name":"Assistant","type":"AssistantAgent" ,"system_message":"","description": "This agent is responsible of follow admin's instructions, usually will answer after every admin's message"},
+      {"agent_variable":"user_proxy_1", "agent_name":"Admin", "type":"UserProxyAgent", "system_message":"Perform the currency conversion."},
+      {"agent_variable":"assistant_1", "agent_name":"Assistant","type":"AssistantAgent" ,"system_message":"You will perform a currency conversion using only functions you have been provided with.","description": "This agent is responsible of follow admin's instructions, usually will answer after every admin's message"},
       {"agent_variable":"executor_1", "agent_name":"Executor","type":"AssistantAgent" , "system_message":"You are responsible of executing custom functions, you don't write your code","description": "This agent is responsible of running code"}
     ],
     "functions":
@@ -17,26 +17,9 @@
     {"manager_variable": "manager_1","manager_name": "client_profile_manager","max_round": 50, "speaker_selection_method":"state_transition_1" }
 
 
-  },
-
-  "group_chat_2":{
-    "agent":
-    [    
-      {"agent_variable":"user_proxy_2", "agent_name":"Admin", "type":"UserProxyAgent"},
-      {"agent_variable":"assistant_2", "agent_name":"Assistant","type":"AssistantAgent" ,"system_message":"","description": "This agent is responsible of follow admin's instructions, usually will answer after every admin's message"},
-      {"agent_variable":"executor_2", "agent_name":"Executor","type":"AssistantAgent" , "system_message":"You are responsible of executing custom functions, you don't write your code","description": "This agent is responsible of running code"}
-    ],
-    "functions":
-    [
-      {"function_name":"extract_fs_metadata_from_file", "description":"This function is to extract fs metadata from a pdf file and format it as dataframe. it takes in a pdf file and return a pandas dataframe", "caller": "assistant_2", "executor":"executor_2"},
-      {"function_name":"financial_statement_extraction", "description":"A financial statement extractor based on metadata", "caller": "assistant_2", "executor":"executor_2"}
-
-    ],
-    "manager":
-    {"manager_variable": "manager_2","manager_name": "FS_manager","max_round": 50, "speaker_selection_method":"state_transition_2" }
-    
-
   }
+
+
 
   
 }

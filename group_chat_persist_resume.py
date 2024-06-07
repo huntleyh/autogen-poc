@@ -10,9 +10,12 @@ from domain_knowledge.direct_aoai import retrieve_llm_response_on_question
 from capabilities.task_tracker import TaskTrackingbility
 from capabilities.stateaware_non_llm import StateAwareNonLlm
 from models.agent_context import AgentContext, PlanContext
+from typing import Literal
+from typing_extensions import Annotated
 
 config_list = autogen.config_list_from_json(env_or_file="AOAI_CONFIG_LIST")
 llm_config = {"config_list": config_list}
+
 
 SEQUENTIAL_STEP = "SequentialStep"
 PARALLEL_STEP = "ParallelStep"
@@ -63,7 +66,7 @@ def run_sequential_tasks(deliverable: PlanContext, groupName: str, group_data: j
     
     #print(f"\tName: {step['Name']}, InitialMessage: {step['InitialMessage']}, Description: {step['Description']}")
     
-    if(len(group_managers) > 0):
+    if (len(group_managers) > 0):
         # For each groupchat manager we store their conversation history so we can retrieve it afterward
         # TODO: Move to a DB so we can handle store/retrieve better
         manager: autogen.GroupChatManager = group_managers[0]
@@ -84,6 +87,8 @@ def run_sequential_tasks(deliverable: PlanContext, groupName: str, group_data: j
         manager.groupchat.agents.append(step_agent)
         
         chat_results = step_agent.initiate_chats(build_agent_list(group_managers)) #.initiate_chat(manager, message=user_proxy_system_message) #, user_proxy_system_message))
+
+        
         
         # For each groupchat manager we store their conversation history so we can retrieve it afterward
         # TODO: Move to a DB so we can handle store/retrieve better
@@ -92,6 +97,7 @@ def run_sequential_tasks(deliverable: PlanContext, groupName: str, group_data: j
             
             persist_group_chat(manager)
         
+    #summary = carry_over
     summary = chat_results[-1].summary
 
     print(f"\t Returning carry_over summary of: {summary}")
@@ -101,19 +107,56 @@ def run_sequential_tasks(deliverable: PlanContext, groupName: str, group_data: j
 def create_group_for_task(deliverable: PlanContext, groupName: str, group_data: json, is_state_aware: bool = True):
     agents_list = []
     agents = group_data.get("agent", [])
+    
+    user_proxy = ''
+    assistant = ''
+    executor = ''
+
     for agent in agents:
         print(f"\tIn GroupTask, creating agent for Group: {groupName}")
-        agents_list.append(create_agent_for_task(agent=agent, deliverable=deliverable, parent_agent_name=groupName, is_state_aware=is_state_aware))
-        
+        agent = create_agent_for_task(agent=agent, deliverable=deliverable, parent_agent_name=groupName, is_state_aware=is_state_aware)
+        agents_list.append(agent)
+        if agent.name == 'Admin':
+            user_proxy = agent
+        elif agent.name == 'Assistant':
+            assistant = agent
+        elif agent.name == 'Executor':
+            executor = agent
+
+    def exchange_rate(base_currency: CurrencySymbol, quote_currency: CurrencySymbol) -> float:
+        if base_currency == quote_currency:
+            return 1.0
+        elif base_currency == "USD" and quote_currency == "EUR":
+            return 1 / 1.1
+        elif base_currency == "EUR" and quote_currency == "USD":
+            return 1.1
+        else:
+            raise ValueError(f"Unknown currencies {base_currency}, {quote_currency}")
+
+    @user_proxy.register_for_execution()
+    @executor.register_for_llm(description="Currency exchange calculator.")
+    def currency_calculator(
+        base_amount: Annotated[float, "Amount of currency in base_currency"],
+        base_currency: Annotated[CurrencySymbol, "Base currency"] = "USD",
+        quote_currency: Annotated[CurrencySymbol, "Quote currency"] = "EUR",
+    ) -> str:
+        quote_amount = exchange_rate(base_currency, quote_currency) * base_amount
+        return f"{quote_amount} {quote_currency}"
+
     manager = group_data.get("manager")
+
     # Create a groupchat and groupchat manager based on the task
     groupchat = autogen.GroupChat(agents=agents_list, messages=[], max_round=MAX_ROUNDS_PER_GROUP_CHAT)
     manager = autogen.GroupChatManager(
                     groupchat=groupchat, 
                     llm_config=llm_config, 
                     name=manager["manager_name"], 
-                    system_message='TBD')
+                    system_message='Start the task for performing a currency conversion')
     
+    #user_proxy.initiate_chat(
+    #    manager, message = user_proxy.system_message
+    #)
+
     return manager
 
 # Create an agent for a specific task
@@ -121,28 +164,31 @@ def create_agent_for_task(agent: json, deliverable: PlanContext, parent_agent_na
     # agent['type'] will be UserProxyAgent or AssistantAgent; UserProxyAgent doesn't have a system message or description
     system_message = ''
     description = ''
+    assistant = ''
     if agent['type'] == 'AssistantAgent':
-        system_message = agent['system_message']
-        description = agent['description']
-    
-    # Create an agent based on the task
-    # We use an assistant agent as we do not need human interaction for this demo
-    assistant = autogen.ConversableAgent( #autogen.AssistantAgent( #
-        name=agent['agent_name'],
-        system_message=system_message,
-        description=description,
-        llm_config=llm_config,
-        max_consecutive_auto_reply=1,
-        human_input_mode="NEVER",
-        code_execution_config=False
-        #chat_messages=conversation_history
-    )
+        # Create an agent based on the task
+        # We use an assistant agent as we do not need human interaction for this demo
+        assistant = autogen.ConversableAgent( #autogen.AssistantAgent( #
+            name=agent['agent_name'],
+            system_message=agent['system_message'],
+            description=agent['description'],
+            llm_config=llm_config,
+            max_consecutive_auto_reply=1,
+            human_input_mode="NEVER",
+            code_execution_config=False
+            #chat_messages=conversation_history
+        )
+    elif agent['type'] == 'UserProxyAgent':
+        assistant = autogen.UserProxyAgent(
+            name=agent['agent_name'],
+            system_message=agent['system_message'],
+        )
 
     if True: #is_state_aware == True:
         # Instantiate a StateAware object. Its parameters are all optional.
         state_aware_ability = StateAwareNonLlm(
             verbosity=2,
-            context= AgentContext(deliverable, agent['agent_variable'], agent['agent_name'], parentAgentName=parent_agent_name)
+            context=AgentContext(deliverable, agent['agent_variable'], agent['agent_name'], parentAgentName=parent_agent_name)
         )
         
         # Inject user feedback
@@ -232,6 +278,20 @@ def persist_group_chat(group_manager: autogen.GroupChatManager):
 
 def get_file_name(group_manager: autogen.GroupChatManager):
     return f"group_chat_history_{group_manager.name}.txt"
+
+CurrencySymbol = Literal["USD", "EUR"]
+
+
+def exchange_rate(base_currency: CurrencySymbol, quote_currency: CurrencySymbol) -> float:
+    if base_currency == quote_currency:
+        return 1.0
+    elif base_currency == "USD" and quote_currency == "EUR":
+        return 1 / 1.1
+    elif base_currency == "EUR" and quote_currency == "USD":
+        return 1.1
+    else:
+        raise ValueError(f"Unknown currencies {base_currency}, {quote_currency}")
+
 
 async def main():
     plan = retrieve_plan("123", "agent_plan 2.json")
