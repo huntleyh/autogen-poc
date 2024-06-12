@@ -22,6 +22,26 @@ PARALLEL_STEP = "ParallelStep"
 MAX_TURNS_PER_AGENT = 5
 MAX_ROUNDS_PER_GROUP_CHAT = 12
 
+class SkillError(Exception):
+    def __init__(self, message, skill):
+        self.message = message
+        self.skill = skill
+    def __str__(self):
+        return f'{self.message} in skill {self.skill}'
+
+CurrencySymbol = Literal["USD", "EUR"]
+
+# Mimics a skill
+def exchange_rate(base_currency: CurrencySymbol, quote_currency: CurrencySymbol) -> float:
+        if base_currency == quote_currency:
+            return 1.0
+        elif base_currency == "USD" and quote_currency == "EUR":
+            return 1 / 1.1
+        elif base_currency == "EUR" and quote_currency == "USD":
+            return 1.1
+        else:
+            raise ValueError(f"Unknown currencies {base_currency}, {quote_currency}")
+
 # Retrieve the existing plan for a customer
 def retrieve_plan(customer_id: str, file_name: str):
     # Open the JSON file and load it into a Python object
@@ -66,27 +86,29 @@ def run_sequential_tasks(deliverable: PlanContext, groupName: str, group_data: j
     
     #print(f"\tName: {step['Name']}, InitialMessage: {step['InitialMessage']}, Description: {step['Description']}")
     
-    if (len(group_managers) > 0):
+    if (len(group_managers) > 10):
         # For each groupchat manager we store their conversation history so we can retrieve it afterward
         # TODO: Move to a DB so we can handle store/retrieve better
         manager: autogen.GroupChatManager = group_managers[0]
         
+        #manager.a_run_chat()
+        
         # initiate the chat with the agents
-        # The Number Agent always returns the same numbers.
-        step_agent = autogen.UserProxyAgent( # autogen.AssistantAgent(
-            name=groupName,
-            system_message=user_proxy_system_message, #step['InitialMessage'],
-            description=groupName,
-            llm_config=llm_config,
-            human_input_mode="NEVER",
-            #max_consecutive_auto_reply=1,
-            code_execution_config=False,
-            is_termination_msg=lambda user_proxy_system_message: True # Always True so we terminate if we get a message to relay to the user
-        )
+        # # The Number Agent always returns the same numbers.
+        # step_agent = autogen.UserProxyAgent( # autogen.AssistantAgent(
+        #     name=groupName,
+        #     system_message=user_proxy_system_message, #step['InitialMessage'],
+        #     description=groupName,
+        #     llm_config=llm_config,
+        #     human_input_mode="NEVER",
+        #     #max_consecutive_auto_reply=1,
+        #     code_execution_config=False,
+        #     is_termination_msg=lambda user_proxy_system_message: True # Always True so we terminate if we get a message to relay to the user
+        # )
         
-        manager.groupchat.agents.append(step_agent)
+        # manager.groupchat.agents.append(step_agent)
         
-        chat_results = step_agent.initiate_chats(build_agent_list(group_managers)) #.initiate_chat(manager, message=user_proxy_system_message) #, user_proxy_system_message))
+        # chat_results = step_agent.initiate_chats(build_agent_list(group_managers)) #.initiate_chat(manager, message=user_proxy_system_message) #, user_proxy_system_message))
 
         
         
@@ -97,8 +119,8 @@ def run_sequential_tasks(deliverable: PlanContext, groupName: str, group_data: j
             
             persist_group_chat(manager)
         
-    #summary = carry_over
-    summary = chat_results[-1].summary
+    summary = carry_over
+    #summary = chat_results[-1].summary
 
     print(f"\t Returning carry_over summary of: {summary}")
 
@@ -108,31 +130,24 @@ def create_group_for_task(deliverable: PlanContext, groupName: str, group_data: 
     agents_list = []
     agents = group_data.get("agent", [])
     
-    user_proxy = ''
-    assistant = ''
-    executor = ''
+    user_proxy: autogen.ConversableAgent = None
+    assistant: autogen.ConversableAgent = None
+    executor: autogen.ConversableAgent = None
 
     for agent in agents:
         print(f"\tIn GroupTask, creating agent for Group: {groupName}")
         agent = create_agent_for_task(agent=agent, deliverable=deliverable, parent_agent_name=groupName, is_state_aware=is_state_aware)
-        agents_list.append(agent)
         if agent.name == 'Admin':
             user_proxy = agent
+            agents_list.append(user_proxy)
         elif agent.name == 'Assistant':
             assistant = agent
+            agents_list.append(assistant)
         elif agent.name == 'Executor':
             executor = agent
-
-    def exchange_rate(base_currency: CurrencySymbol, quote_currency: CurrencySymbol) -> float:
-        if base_currency == quote_currency:
-            return 1.0
-        elif base_currency == "USD" and quote_currency == "EUR":
-            return 1 / 1.1
-        elif base_currency == "EUR" and quote_currency == "USD":
-            return 1.1
-        else:
-            raise ValueError(f"Unknown currencies {base_currency}, {quote_currency}")
-
+            agents_list.append(executor)
+        
+    # configure user proxy and executor agents to execute the exchange_rate skill, including error handling
     @user_proxy.register_for_execution()
     @executor.register_for_llm(description="Currency exchange calculator.")
     def currency_calculator(
@@ -141,6 +156,15 @@ def create_group_for_task(deliverable: PlanContext, groupName: str, group_data: 
         quote_currency: Annotated[CurrencySymbol, "Quote currency"] = "EUR",
     ) -> str:
         quote_amount = exchange_rate(base_currency, quote_currency) * base_amount
+        if quote_amount > 300:
+            raise SkillError("Missing File", "Conversion Skill")
+        elif quote_amount > 200:
+            raise SkillError("429 Error", "Conversion Skill")
+        elif quote_amount > 100:
+            raise SkillError("Tool Error", "Conversion Skill")
+        elif quote_amount > 1:
+            raise SkillError("Rogue Agent", "Conversion Skill")
+        
         return f"{quote_amount} {quote_currency}"
 
     manager = group_data.get("manager")
@@ -153,9 +177,9 @@ def create_group_for_task(deliverable: PlanContext, groupName: str, group_data: 
                     name=manager["manager_name"], 
                     system_message='Start the task for performing a currency conversion')
     
-    #user_proxy.initiate_chat(
-    #    manager, message = user_proxy.system_message
-    #)
+    user_proxy.initiate_chat(
+        manager, message = user_proxy.system_message
+    )
 
     return manager
 
@@ -164,16 +188,15 @@ def create_agent_for_task(agent: json, deliverable: PlanContext, parent_agent_na
     # agent['type'] will be UserProxyAgent or AssistantAgent; UserProxyAgent doesn't have a system message or description
     system_message = ''
     description = ''
-    assistant = ''
     if agent['type'] == 'AssistantAgent':
         # Create an agent based on the task
         # We use an assistant agent as we do not need human interaction for this demo
-        assistant = autogen.ConversableAgent( #autogen.AssistantAgent( #
+        assistant = autogen.AssistantAgent( #
             name=agent['agent_name'],
             system_message=agent['system_message'],
             description=agent['description'],
             llm_config=llm_config,
-            max_consecutive_auto_reply=1,
+            #max_consecutive_auto_reply=1,
             human_input_mode="NEVER",
             code_execution_config=False
             #chat_messages=conversation_history
@@ -278,20 +301,6 @@ def persist_group_chat(group_manager: autogen.GroupChatManager):
 
 def get_file_name(group_manager: autogen.GroupChatManager):
     return f"group_chat_history_{group_manager.name}.txt"
-
-CurrencySymbol = Literal["USD", "EUR"]
-
-
-def exchange_rate(base_currency: CurrencySymbol, quote_currency: CurrencySymbol) -> float:
-    if base_currency == quote_currency:
-        return 1.0
-    elif base_currency == "USD" and quote_currency == "EUR":
-        return 1 / 1.1
-    elif base_currency == "EUR" and quote_currency == "USD":
-        return 1.1
-    else:
-        raise ValueError(f"Unknown currencies {base_currency}, {quote_currency}")
-
 
 async def main():
     plan = retrieve_plan("123", "agent_plan 2.json")

@@ -41,7 +41,7 @@ class StateAwareNonLlm(AgentCapability):
         verbosity: Optional[int] = 0,
         recall_threshold: Optional[float] = 1.5,
         max_num_retrievals: Optional[int] = 10,
-        llm_config: Optional[Union[Dict, bool]] = None,
+        llm_config: Optional[Union[Dict[str, str], bool]] = None,
         is_group_manager: Optional[bool] = False
     ):
         """
@@ -75,7 +75,7 @@ class StateAwareNonLlm(AgentCapability):
         if self.state_aware_agent.name == "Assistant":
             return """
                 1. Generate a random dollar amount in USD
-                2. Calculate how much this is in EUR
+                2. Calculate the currency exchange value from USD to EUR
                 3. Determine how much this would have equated to 100 years ago
                 """
         elif self.state_aware_agent.name == "Executor":
@@ -92,8 +92,8 @@ class StateAwareNonLlm(AgentCapability):
         self.state_aware_agent = agent
 
         # Save this task to the db if it doesn't already exist
-        if (not self.tasks.task_exists(self.tasks.taskId, agent.name, agent.description)):
-            self.tasks.add_task(self.tasks.taskId, agent.name, agent.description)
+        if (agent.name == 'Assistant' and not self.tasks.task_exists(self.tasks.taskId, agent.name, agent.system_message)):
+            self.tasks.add_task(self.tasks.taskId, agent.name, agent.system_message)
 
         # Enable resuming by recollecting what we've done so far BEFORE registering hooks
         #self.recollect()
@@ -147,11 +147,11 @@ class StateAwareNonLlm(AgentCapability):
             return text
         
         response_format = """
-        At the end of your response, use a single = as a delimeter followed by a JSON string of step or steps you performed as well as a status for each step. 
+        At the end of your response, use a single | as a delimeter followed by a JSON string of step or steps you performed as well as a status for each step.
         The format should be a single line with a JSON formatted string in the format: {"Steps": [{ "STEP": "your first task here", "STATUS": "status of the step", "DETAIL": "additional detail" }, { "STEP": "your second task here", "STATUS": "status of the step", "DETAIL": "additional detail" }]}
         Valid statuses are: DONE, IN_PROGRESS, BLOCKED, TODO. Do not use any other status outside of these three.
         The "Detail" property MUST ALWAYS BE PRESENT and will include any additional detail such as error messages or asking for additional information or documents needed to complete the step.
-        Do not include additional detail at the end of your response. 
+        Do not include additional detail at the end of your response. When you have completed all of your tasks, end the chat.
         """
         
         response_instructions =  f"""{response_format}   
@@ -167,7 +167,7 @@ class StateAwareNonLlm(AgentCapability):
 
             for step in steps:
                 # Save this task to the db if it doesn't already exist
-                if not self.tasks.task_exists(self.tasks.taskId, self.state_aware_agent.name + "-subtask", step):
+                if self.state_aware_agent.name == 'Assistant' and not self.tasks.task_exists(self.tasks.taskId, self.state_aware_agent.name + "-subtask", step):
                     self.tasks.add_task(self.tasks.taskId, self.state_aware_agent.name + "-subtask", step)
 
             text = f"""
@@ -212,40 +212,51 @@ class StateAwareNonLlm(AgentCapability):
         if self.is_recollecting or silent == True:
             return message
         
-        message = ConversableAgent._message_to_dict(message)
+        msg_dict = ConversableAgent._message_to_dict(message)
         # If the agent is conversing, update the state to in progress. If the message the agent is about to send
         # contains the Done message, update the db to indicate the task is done
         # extract the json from the message and use that to update the tasks
-        message_parts = message.get('content').split("=")
-        response_json = {}
-        
-        if(len(message_parts) > 1) and self.isValidJson(message_parts[1]):
-            json_str = message_parts[1]
-            response_json = json.loads(json_str)
+        msg_content = msg_dict.get('content')
+        msg_role = msg_dict.get('role')
+        if msg_content is not None and (msg_role != 'function'):
+            if msg_content.startswith("Error"):
+                message_parts = msg_content.split(":")
+                error_message = message_parts[1].strip()
+
+                message["content"] = "The following error was encountered and this task needs to be marked with state Error and the following detail: " + error_message
+            else:
+                message_parts = msg_content.split("|")
+                response_json = {}
+                
+                if(len(message_parts) > 1) and self.isValidJson(message_parts[1].strip()):
+                    json_str = message_parts[1]
+                    response_json = json.loads(json_str)
+                    
+                elif len(message_parts) > 0 and self.isValidJson(message_parts[0]):
+                    json_str = message_parts[0]
+                    response_json = json.loads(json_str)
+
+                if response_json is not None and response_json.__len__() > 0:
+                    if self.is_group_manager == False:
+                        for step in response_json['Steps']:
+                            # strip the number out of the step (i.e., it may come in as '3. Get how many months are profitable')
+                            strStep = (str)(step["STEP"])
+                            strStep = strStep[strStep.find('.') + 1:]
+                            self.tasks.update_task(self.state_aware_agent.name + "-subtask", strStep.strip(), step["DETAIL"], step["STATUS"], msg_content)
+
+                # we don't need to save a tool output
+                if msg_role != 'tool':
+                    self.memory.save_to_memory(
+                    event = Event(message_type=self.MESSAGE_TYPE, message=msg_content, role=self.__get_role__(msg_dict))
+                    )
             
-        elif len(message_parts) > 0 and self.isValidJson(message_parts[0]):
-            json_str = message_parts[0]
-            response_json = json.loads(json_str)
-
-        if isinstance(response_json, str) and response_json.__len__() > 0:
-            if self.is_group_manager == False:
-                for step in response_json['Steps']:
-                    # strip the number out of the step (i.e., it may come in as '3. Get how many months are profitable')
-                    strStep = (str)(step["STEP"])
-                    strStep = strStep[strStep.find('.') + 1:]
-                    self.tasks.update_task(self.state_aware_agent.name + "-subtask", strStep.strip(), step["DETAIL"], step["STATUS"], message.get("content"))
-
-        self.memory.save_to_memory(
-        event = Event(message_type=self.MESSAGE_TYPE, message=message.get("content"), role=self.__get_role__(message))
-        )
-        
         return message
     
-    def __get_role__(self, message: Dict)->str:
+    def __get_role__(self, msg_dict: Dict)->str:
         """
         Returns the role of the message sender.
         """
-        if message.get("role") is not None:
-            return message.get("role")
+        if msg_dict.get("role") is not None:
+            return msg_dict.get("role")
         
         return "assistant"

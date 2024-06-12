@@ -2,8 +2,8 @@
   "group_chat_1":{
     "agent":
     [    
-      {"agent_variable":"user_proxy_1", "agent_name":"Admin", "type":"UserProxyAgent", "system_message":"Perform the currency conversion."},
-      {"agent_variable":"assistant_1", "agent_name":"Assistant","type":"AssistantAgent" ,"system_message":"You will perform a currency conversion using only functions you have been provided with.","description": "This agent is responsible of follow admin's instructions, usually will answer after every admin's message"},
+      {"agent_variable":"user_proxy_1", "agent_name":"Admin", "type":"UserProxyAgent", "system_message":"Ensure the currency conversion is completed based on all steps given to the Assistant."},
+      {"agent_variable":"assistant_1", "agent_name":"Assistant","type":"AssistantAgent" ,"system_message":"You will perform the provide steps. For the currency conversion calculation, ask the Executor to perform the calculation.","description": "This agent is responsible for following the admin's instructions, usually will answer after every admin's message"},
       {"agent_variable":"executor_1", "agent_name":"Executor","type":"AssistantAgent" , "system_message":"You are responsible of executing custom functions, you don't write your code","description": "This agent is responsible of running code"}
     ],
     "functions":
